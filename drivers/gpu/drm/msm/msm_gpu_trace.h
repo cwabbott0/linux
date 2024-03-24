@@ -177,6 +177,58 @@ TRACE_EVENT(msm_gpu_resume,
 		TP_printk("%u", __entry->dummy)
 );
 
+TRACE_EVENT(msm_gpu_preemption_trigger,
+		TP_PROTO(u32 ring_id_from, u32 ring_id_to),
+		TP_ARGS(ring_id_from, ring_id_to),
+		TP_STRUCT__entry(
+			__field(u32, ring_id_from)
+			__field(u32, ring_id_to)
+			),
+		TP_fast_assign(
+			__entry->ring_id_from = ring_id_from;
+			__entry->ring_id_to = ring_id_to;
+			),
+		TP_printk("preempting %u -> %u", __entry->ring_id_from, __entry->ring_id_to)
+);
+
+TRACE_EVENT(msm_gpu_preemption_irq,
+		TP_PROTO(u32 ring_id),
+		TP_ARGS(ring_id),
+		TP_STRUCT__entry(
+			__field(u32, ring_id)
+			),
+		TP_fast_assign(
+			__entry->ring_id = ring_id;
+			),
+		TP_printk("preempted to %u", __entry->ring_id)
+);
+
+TRACE_EVENT(msm_gpu_fault,
+		TP_PROTO(u32 ring_id),
+		TP_ARGS(ring_id),
+		TP_STRUCT__entry(
+			__field(u32, ring_id)
+			),
+		TP_fast_assign(
+			__entry->ring_id = ring_id;
+			),
+		TP_printk("fault current ring %u", __entry->ring_id)
+);
+
+TRACE_EVENT(msm_gpu_submit_ib,
+		TP_PROTO(u32 ring_id, u64 ib_address),
+		TP_ARGS(ring_id, ib_address),
+		TP_STRUCT__entry(
+			__field(u32, ring_id)
+			__field(u64, ib_address)
+			),
+		TP_fast_assign(
+			__entry->ring_id = ring_id;
+			__entry->ib_address = ib_address;
+			),
+		TP_printk("ib sumbmitted to ring %u %llx", __entry->ring_id, __entry->ib_address)
+);
+
 #endif
 
 #undef TRACE_INCLUDE_PATH

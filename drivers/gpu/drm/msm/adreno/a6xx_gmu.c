@@ -1566,6 +1566,50 @@ void a6xx_gmu_remove(struct a6xx_gpu *a6xx_gpu)
 	put_device(gmu->dev);
 }
 
+#define A6XX_GMU_FENCED_WRITE_SLEEP_US 10 /* Sleep time between reads in us */
+#define A6XX_GMU_FENCED_WRITE_TIMEOUT  600 /* Timeout in us */
+int a6xx_gmu_fenced_write(struct a6xx_gpu *a6xx_gpu, unsigned int reg,
+		unsigned int value, unsigned int fence_mask)
+{
+	struct a6xx_gmu *gmu = &a6xx_gpu->gmu;
+	struct adreno_gpu *adreno_gpu = &a6xx_gpu->base;
+	struct msm_gpu *gpu = &adreno_gpu->base;
+	unsigned int status;
+	ktime_t timeout = ktime_add_us(ktime_get(),
+			A6XX_GMU_FENCED_WRITE_TIMEOUT);
+
+	/* Write to the GPU register */
+	gpu_write(gpu, reg, value);
+
+	might_sleep_if(A6XX_GMU_FENCED_WRITE_SLEEP_US);
+	for (;;) {
+		status = gmu_read(gmu, REG_A6XX_GMU_AHB_FENCE_STATUS);
+		/*
+		 * If no bits of the fence_mask are set in the status, then the
+		 * write was successful
+		 */
+		if (!(status & fence_mask))
+			return 0;
+
+		if (ktime_compare(ktime_get(), timeout) > 0) {
+			/* Timed out, but check one last time */
+			status = gmu_read(gmu, REG_A6XX_GMU_AHB_FENCE_STATUS);
+			if (!(status & fence_mask))
+				return 0;
+
+			break;
+		}
+
+		usleep_range((A6XX_GMU_FENCED_WRITE_SLEEP_US >> 2) + 1,
+				A6XX_GMU_FENCED_WRITE_SLEEP_US);
+
+		/* Try writing again */
+		gpu_write(gpu, reg, value);
+	}
+
+	return -ETIMEDOUT;
+}
+
 static int cxpd_notifier_cb(struct notifier_block *nb,
 			unsigned long action, void *data)
 {
