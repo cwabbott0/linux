@@ -438,6 +438,11 @@ static void a7xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 
 	/* Submit the commands */
 	for (i = 0; i < submit->nr_cmds; i++) {
+		uint32_t next_ring_pos;
+		if (ring->next == ring->end)
+			next_ring_pos = 0;
+		else
+			next_ring_pos = (uint32_t)(ring->next - ring->start);
 		switch (submit->cmd[i].type) {
 		case MSM_SUBMIT_CMD_IB_TARGET_BUF:
 			break;
@@ -454,7 +459,7 @@ static void a7xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 			break;
 		}
 
-		trace_msm_gpu_submit_ib(ring->id, submit->cmd[i].iova);
+		trace_msm_gpu_submit_ib(ring->id, next_ring_pos, submit->cmd[i].iova);
 		/*
 		 * Periodically update shadow-wptr if needed, so that we
 		 * can see partial progress of submits with large # of
@@ -766,62 +771,66 @@ static void gen7_patch_pwrup_reglist(struct msm_gpu *gpu)
 	struct cpu_gpu_lock *lock = ptr;
 
 	lock->gpu_req = lock->cpu_req = lock->turn = 0;
-	// a7xx is supposed to take the reglist in a new format but for whatever reason it is instead expecting the old one
-	/* lock->ifpc_list_len = 0; */
-	/* lock->preemption_list_len = 4;//ARRAY_SIZE(gen7_pwrup_reglist); */
-	/* lock->dynamic_list_len = 0; */
-	lock->list_length = 2 * (ARRAY_SIZE(gen7_pwrup_reglist) + ARRAY_SIZE(gen7_ifpc_pwrup_reglist));
-	lock->list_offset = 2 * ARRAY_SIZE(gen7_pwrup_reglist);
-	for (int i = 0; i < ARRAY_SIZE(gen7_ifpc_pwrup_reglist); i++)
-		lock->regs[i] = gen7_ifpc_pwrup_reglist[i] | (u64) gpu_read(gpu, gen7_ifpc_pwrup_reglist[i]) << 32;
-	for (int i = 0; i < ARRAY_SIZE(gen7_pwrup_reglist); i++)
-		lock->regs[i + ARRAY_SIZE(gen7_ifpc_pwrup_reglist)] = gen7_pwrup_reglist[i] | (u64) gpu_read(gpu, gen7_pwrup_reglist[i]) << 32;
-	/* struct adreno_reglist_list reglist[2]; */
-	/* void *ptr = a6xx_gpu->pwrup_reglist_ptr; */
-	/* struct cpu_gpu_lock *lock = ptr; */
-	/* lock->gpu_req = lock->cpu_req = lock->turn = 0; */
-	/* int i, j; */
-	/* u32 *dest = ptr + sizeof(*lock); */
+	if (/*TODO at least if 730*/false) {
+		lock->list_length = 2 * (ARRAY_SIZE(gen7_pwrup_reglist) + ARRAY_SIZE(gen7_ifpc_pwrup_reglist));
+		lock->list_offset = 2 * ARRAY_SIZE(gen7_pwrup_reglist);
+		for (int i = 0; i < ARRAY_SIZE(gen7_ifpc_pwrup_reglist); i++)
+			lock->regs[i] = gen7_ifpc_pwrup_reglist[i] | (u64) gpu_read(gpu, gen7_ifpc_pwrup_reglist[i]) << 32;
+		for (int i = 0; i < ARRAY_SIZE(gen7_pwrup_reglist); i++)
+			lock->regs[i + ARRAY_SIZE(gen7_ifpc_pwrup_reglist)] = gen7_pwrup_reglist[i] | (u64) gpu_read(gpu, gen7_pwrup_reglist[i]) << 32;
+	} else {
+		// a750 uses this new format
+		lock->ifpc_list_len = ARRAY_SIZE(gen7_ifpc_pwrup_reglist);
+		lock->preemption_list_len = ARRAY_SIZE(gen7_pwrup_reglist);
+		struct adreno_reglist_list reglist[2];
+		void *ptr = a6xx_gpu->pwrup_reglist_ptr;
+		struct cpu_gpu_lock *lock = ptr;
+		lock->gpu_req = lock->cpu_req = lock->turn = 0;
+		int i, j;
+		u32 *dest = /* ptr + offsetof(struct cpu_gpu_lock, regs) */(u32*)&lock->regs[0];
 
-	/* /\* Static IFPC-only registers *\/ */
-	/* reglist[0].regs = gen7_ifpc_pwrup_reglist; */
-	/* reglist[0].count = ARRAY_SIZE(gen7_ifpc_pwrup_reglist); */
-	/* lock->ifpc_list_len = reglist[0].count; */
+		/* Static IFPC-only registers */
+		reglist[0].regs = gen7_ifpc_pwrup_reglist;
+		reglist[0].count = ARRAY_SIZE(gen7_ifpc_pwrup_reglist);
+		lock->ifpc_list_len = reglist[0].count;
 
-	/* /\* Static IFPC + preemption registers *\/ */
-	/* reglist[1].regs = gen7_pwrup_reglist; */
-	/* reglist[1].count = ARRAY_SIZE(gen7_pwrup_reglist); */
-	/* lock->preemption_list_len = reglist[1].count; */
+		//reglist[0].count = 0; //XXX ignore for now
 
-	/* /\* */
-	/*  * For each entry in each of the lists, write the offset and the current */
-	/*  * register value into the GPU buffer */
-	/*  *\/ */
-	/* for (i = 0; i < 2; i++) { */
-	/* 	const u32 *r = reglist[i].regs; */
+		/* Static IFPC + preemption registers */
+		reglist[1].regs = gen7_pwrup_reglist;
+		reglist[1].count = ARRAY_SIZE(gen7_pwrup_reglist);
+		lock->preemption_list_len = reglist[1].count;
 
-	/* 	for (j = 0; j < reglist[i].count; j++) { */
-	/* 		*dest++ = r[j]; */
-	/* 		*dest++ = gpu_read(gpu, r[j]); */
-	/* 	} */
-	/* } */
+		/*
+		* For each entry in each of the lists, write the offset and the current
+		* register value into the GPU buffer
+		*/
+		for (i = 0; i < 2; i++) {
+			const u32 *r = reglist[i].regs;
 
-	/* /\* */
-	/*  * The overall register list is composed of */
-	/*  * 1. Static IFPC-only registers */
-	/*  * 2. Static IFPC + preemption registers */
-	/*  * 3. Dynamic IFPC + preemption registers (ex: perfcounter selects) */
-	/*  * */
-	/*  * The first two lists are static. Size of these lists are stored as */
-	/*  * number of pairs in ifpc_list_len and preemption_list_len */
-	/*  * respectively. With concurrent binning, Some of the perfcounter */
-	/*  * registers being virtualized, CP needs to know the pipe id to program */
-	/*  * the aperture inorder to restore the same. Thus, third list is a */
-	/*  * dynamic list with triplets as */
-	/*  * (<aperture, shifted 12 bits> <address> <data>), and the length is */
-	/*  * stored as number for triplets in dynamic_list_len. */
-	/*  *\/ */
-	/* lock->dynamic_list_len = 0; */
+			for (j = 0; j < reglist[i].count; j++) {
+				*dest++ = r[j];
+				*dest++ = gpu_read(gpu, r[j]);
+			}
+		}
+
+		/*
+		* The overall register list is composed of
+		* 1. Static IFPC-only registers
+		* 2. Static IFPC + preemption registers
+		* 3. Dynamic IFPC + preemption registers (ex: perfcounter selects)
+		*
+		* The first two lists are static. Size of these lists are stored as
+		* number of pairs in ifpc_list_len and preemption_list_len
+		* respectively. With concurrent binning, Some of the perfcounter
+		* registers being virtualized, CP needs to know the pipe id to program
+		* the aperture inorder to restore the same. Thus, third list is a
+		* dynamic list with triplets as
+		* (<aperture, shifted 12 bits> <address> <data>), and the length is
+		* stored as number for triplets in dynamic_list_len.
+		*/
+		lock->dynamic_list_len = 0;
+	}
 }
 
 static int a6xx_preempt_start(struct msm_gpu *gpu)
@@ -932,7 +941,7 @@ static int a7xx_cp_init(struct msm_gpu *gpu)
 	/* Hi address */
 	OUT_RING(ring, upper_32_bits(a6xx_gpu->pwrup_reglist_iova));
 	/* BIT(31) set => read the regs from the list */
-	OUT_RING(ring, 0x00000001);
+	OUT_RING(ring, BIT(31));
 
 	a6xx_flush(gpu, ring);
 	return a6xx_idle(gpu, ring) ? 0 : -EINVAL;

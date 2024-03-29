@@ -216,17 +216,19 @@ TRACE_EVENT(msm_gpu_fault,
 );
 
 TRACE_EVENT(msm_gpu_submit_ib,
-		TP_PROTO(u32 ring_id, u64 ib_address),
-		TP_ARGS(ring_id, ib_address),
+		TP_PROTO(u32 ring_id, u32 ring_offset, u64 ib_address),
+		TP_ARGS(ring_id, ring_offset, ib_address),
 		TP_STRUCT__entry(
 			__field(u32, ring_id)
+			__field(u32, ring_offset)
 			__field(u64, ib_address)
 			),
 		TP_fast_assign(
 			__entry->ring_id = ring_id;
+			__entry->ring_offset = ring_offset;
 			__entry->ib_address = ib_address;
 			),
-		TP_printk("ib sumbmitted to ring %u %llx", __entry->ring_id, __entry->ib_address)
+		TP_printk("ib sumbmitted to ring %u (%x) %llx", __entry->ring_id, __entry->ring_offset, __entry->ib_address)
 );
 
 #endif
