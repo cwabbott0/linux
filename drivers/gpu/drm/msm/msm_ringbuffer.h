@@ -109,6 +109,8 @@ void msm_ringbuffer_destroy(struct msm_ringbuffer *ring);
 
 /* ringbuffer helpers (the parts that are same for a3xx/a2xx/z180..) */
 
+#include "msm_gpu_trace.h"
+
 static inline void
 OUT_RING(struct msm_ringbuffer *ring, uint32_t data)
 {
@@ -119,6 +121,8 @@ OUT_RING(struct msm_ringbuffer *ring, uint32_t data)
 	if (ring->next == ring->end)
 		ring->next = ring->start;
 	*(ring->next++) = data;
+	//if (data == 0x70970001 || data == 0x706b0004)
+		trace_msm_gpu_write_ring(ring->id, data);
 }
 
 #endif /* __MSM_RINGBUFFER_H__ */

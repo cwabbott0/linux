@@ -231,6 +231,20 @@ TRACE_EVENT(msm_gpu_submit_ib,
 		TP_printk("ib sumbmitted to ring %u (%x) %llx", __entry->ring_id, __entry->ring_offset, __entry->ib_address)
 );
 
+TRACE_EVENT(msm_gpu_write_ring,
+		TP_PROTO(u32 ring_id, u32 word),
+		TP_ARGS(ring_id, word),
+		TP_STRUCT__entry(
+			__field(u32, ring_id)
+			__field(u32, word)
+			),
+		TP_fast_assign(
+			__entry->ring_id = ring_id;
+			__entry->word = word;
+			),
+		TP_printk("ring %i written %x", __entry->ring_id, __entry->word)
+);
+
 #endif
 
 #undef TRACE_INCLUDE_PATH

@@ -145,8 +145,10 @@ static void update_shadow_rptr(struct msm_gpu *gpu, struct msm_ringbuffer *ring)
 	/* Expanded APRIV doesn't need to issue the WHERE_AM_I opcode */
 	if (a6xx_gpu->has_whereami && !adreno_gpu->base.hw_apriv) {
 		OUT_PKT7(ring, CP_WHERE_AM_I, 2);
-		OUT_RING(ring, lower_32_bits(shadowptr(a6xx_gpu, ring)));
-		OUT_RING(ring, upper_32_bits(shadowptr(a6xx_gpu, ring)));
+		/* OUT_RING(ring, lower_32_bits(shadowptr(a6xx_gpu, ring))); */
+		/* OUT_RING(ring, upper_32_bits(shadowptr(a6xx_gpu, ring))); */
+		OUT_RING(ring, lower_32_bits(rbmemptr(ring, rptr)));
+		OUT_RING(ring, upper_32_bits(rbmemptr(ring, rptr)));
 	}
 }
 
@@ -456,6 +458,17 @@ static void a7xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 			OUT_RING(ring, upper_32_bits(submit->cmd[i].iova));
 			OUT_RING(ring, submit->cmd[i].size);
 			ibs++;
+			/* struct msm_drm_private *priv = adreno_gpu->base.dev->dev_private; */
+			/* struct msm_gem_object *msm_obj; */
+			/* list_for_each_entry(msm_obj, &priv->objects, node) { */
+			/* 	struct msm_gem_vma *vma; */
+			/* 	list_for_each_entry(vma, &msm_obj->vmas, list) { */
+			/* 		if (submit->cmd[i].iova == vma->iova) { */
+			/* 			if (!msm_obj->vaddr) */
+			/* 				msm_gem_get_vaddr_locked(&msm_obj->base); */
+			/* 		} */
+			/* 	} */
+			/* } */
 			break;
 		}
 
@@ -532,6 +545,27 @@ static void a7xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 	OUT_PKT7(ring, CP_SET_MARKER, 1);
 	OUT_RING(ring, 0x100); /* IFPC enable */
 
+	OUT_PKT7(ring, CP_NOP, 4);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_PKT7(ring, CP_NOP, 4);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_PKT7(ring, CP_NOP, 4);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_PKT7(ring, CP_NOP, 4);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+	OUT_RING(ring, 0xdeadbeef);
+
 	/* If preemption is enabled */
 	if (gpu->nr_rings > 1) {
 		 /*
@@ -559,6 +593,7 @@ static void a7xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 		 /* generate interrupt on preemption completion */
 		 OUT_RING(ring, 0x00);
 	}
+
 
 	trace_msm_gpu_submit_flush(submit,
 		gpu_read64(gpu, REG_A6XX_CP_ALWAYS_ON_COUNTER));
@@ -1793,6 +1828,12 @@ static void a6xx_fault_detect_irq(struct msm_gpu *gpu)
 
 	trace_msm_gpu_fault(ring ? ring->id : 1000);
 
+	uint32_t rptrs[4];
+	for (unsigned int ring = 0; ring < gpu->nr_rings; ring++)
+		rptrs[ring] = gpu->rb[ring]->memptrs->rptr;
+	if (ring)
+		rptrs[ring->id] = gpu_read(gpu, REG_A6XX_CP_RB_RPTR);
+
 	DRM_DEV_ERROR(&gpu->pdev->dev,
 		"gpu fault ring %d fence %x status %8.8X rb %4.4x/%4.4x ib1 %16.16llX/%4.4x ib2 %16.16llX/%4.4x\n",
 		ring ? ring->id : -1, ring ? ring->fctx->last_fence : 0,
@@ -1803,6 +1844,42 @@ static void a6xx_fault_detect_irq(struct msm_gpu *gpu)
 		gpu_read(gpu, REG_A6XX_CP_IB1_REM_SIZE),
 		gpu_read64(gpu, REG_A6XX_CP_IB2_BASE),
 		gpu_read(gpu, REG_A6XX_CP_IB2_REM_SIZE));
+
+	// TODO dump ring and IB1
+	struct msm_drm_private *priv = adreno_gpu->base.dev->dev_private;
+
+	uint64_t ib1_iova = gpu_read64(gpu, REG_A6XX_CP_IB1_BASE);
+	struct msm_gem_object *msm_obj;
+	list_for_each_entry(msm_obj, &priv->objects, node) {
+		struct msm_gem_vma *vma;
+		list_for_each_entry(vma, &msm_obj->vmas, list) {
+			if (ib1_iova == vma->iova) {
+				DRM_DEV_ERROR(&gpu->pdev->dev, "found ");
+				if (msm_obj->vaddr) {
+					for (int i = 0; i < 10; i++) {
+						DRM_DEV_ERROR(&gpu->pdev->dev, "%x", ((uint32_t*)msm_obj->vaddr)[i]);
+					}
+				}
+				else
+					DRM_DEV_ERROR(&gpu->pdev->dev, "\nnot mapped\n");
+			}
+		}
+	}
+
+	/* for (unsigned int ring = 0; ring < 4; ring++) { */
+	/* 	DRM_DEV_ERROR(&gpu->pdev->dev, "ring %i\n", ring); */
+	/* 	for (uint32_t *i = gpu->rb[ring]->start; i < gpu->rb[ring]->end; i++) { */
+	/* 		DRM_DEV_ERROR(&gpu->pdev->dev, "\t%x\n", *i); */
+	/* 	} */
+	/* } */
+	for (unsigned int ring = 0; ring < gpu->nr_rings; ring++) {
+		DRM_DEV_ERROR(&gpu->pdev->dev, "ring %i\n", ring);
+		for (uint32_t i = 0; i < 30; i++) {
+			uint32_t off = ((rptrs[ring] - 15 + i) % ((gpu->rb[ring]->end - gpu->rb[ring]->start) - 1));
+			uint32_t *p = gpu->rb[ring]->start + off;
+			DRM_DEV_ERROR(&gpu->pdev->dev, "\t %p %i %x ", gpu->rb[ring]->start, off, *p);
+		}
+	}
 
 	/* Turn off the hangcheck timer to keep it from bothering us */
 	del_timer(&gpu->hangcheck_timer);
