@@ -840,6 +840,9 @@ msm_gpu_create_private_address_space(struct msm_gpu *gpu, struct task_struct *ta
 	if (IS_ERR_OR_NULL(aspace))
 		aspace = msm_gem_address_space_get(gpu->aspace);
 
+	phys_addr_t ttbr; int asid;
+	msm_iommu_pagetable_params(aspace->mmu, &ttbr, &asid);
+	DRM_DEV_ERROR(&gpu->pdev->dev, "pid0 %i gpu ttbr0 %llx \n", task->pid, ttbr);
 	return aspace;
 }
 

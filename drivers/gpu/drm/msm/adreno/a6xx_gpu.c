@@ -237,6 +237,8 @@ static void a6xx_set_pagetable(struct a6xx_gpu *a6xx_gpu,
 	OUT_RING(ring, upper_32_bits(ttbr));
 	OUT_RING(ring, ctx->seqno); //this should be contextidr
 
+	mb();
+
 	/*
 	 * Sync both threads after switching pagetables and enable BR only
 	 * to make sure BV doesn't race ahead while BR is still switching
@@ -1804,6 +1806,11 @@ static void a6xx_cp_hw_err_irq(struct msm_gpu *gpu)
 
 }
 
+#include <linux/adreno-smmu-priv.h>
+#include <linux/io-pgtable.h>
+#include "msm_drv.h"
+#include "msm_mmu.h"
+
 static void a6xx_fault_detect_irq(struct msm_gpu *gpu)
 {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
@@ -1818,6 +1825,16 @@ static void a6xx_fault_detect_irq(struct msm_gpu *gpu)
 	 */
 	if (gpu_read(gpu, REG_A6XX_RBBM_STATUS3) & A6XX_RBBM_STATUS3_SMMU_STALLED_ON_FAULT)
 		return;
+
+	struct adreno_smmu_priv *adreno_smmu = dev_get_drvdata(gpu->aspace->mmu->dev);
+	struct adreno_smmu_fault_info info;
+
+	if (adreno_smmu->get_fault_info) {
+		adreno_smmu->get_fault_info(adreno_smmu->cookie, &info);
+		DRM_DEV_ERROR(&gpu->pdev->dev, "gpu ttbr0 %llx \n", info.ttbr0);
+	} else {
+		DRM_DEV_ERROR(&gpu->pdev->dev, "gpu ttbr0 n.a. \n");
+	}
 
 	/*
 	 * Force the GPU to stay on until after we finish

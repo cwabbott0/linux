@@ -1581,7 +1581,7 @@ int a6xx_gmu_fenced_write(struct a6xx_gpu *a6xx_gpu, unsigned int reg,
 	/* Write to the GPU register */
 	gpu_write(gpu, reg, value);
 
-	might_sleep_if(A6XX_GMU_FENCED_WRITE_SLEEP_US);
+	/* might_sleep_if(A6XX_GMU_FENCED_WRITE_SLEEP_US); */
 	for (;;) {
 		status = gmu_read(gmu, REG_A6XX_GMU_AHB_FENCE_STATUS);
 		/*
@@ -1600,8 +1600,8 @@ int a6xx_gmu_fenced_write(struct a6xx_gpu *a6xx_gpu, unsigned int reg,
 			break;
 		}
 
-		usleep_range((A6XX_GMU_FENCED_WRITE_SLEEP_US >> 2) + 1,
-				A6XX_GMU_FENCED_WRITE_SLEEP_US);
+		/* usleep_range((A6XX_GMU_FENCED_WRITE_SLEEP_US >> 2) + 1, */
+		/* 		A6XX_GMU_FENCED_WRITE_SLEEP_US); */
 
 		/* Try writing again */
 		gpu_write(gpu, reg, value);
