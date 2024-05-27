@@ -245,6 +245,20 @@ TRACE_EVENT(msm_gpu_write_ring,
 		TP_printk("ring %i written %x", __entry->ring_id, __entry->word)
 );
 
+TRACE_EVENT(msm_gpu_wptr_update,
+		TP_PROTO(u32 old, u32 new),
+		TP_ARGS(old, new),
+		TP_STRUCT__entry(
+			__field(u32, old)
+			__field(u32, new)
+			),
+		TP_fast_assign(
+			__entry->old = old;
+			__entry->new = new;
+			),
+		TP_printk("wptr %x->%x", __entry->old, __entry->new)
+);
+
 #endif
 
 #undef TRACE_INCLUDE_PATH

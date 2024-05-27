@@ -59,7 +59,10 @@ static inline void update_wptr(struct msm_gpu *gpu, struct msm_ringbuffer *ring)
 	/* Make sure everything is posted before making a decision */
 	mb();
 
-	/* gpu_write(gpu, REG_A6XX_CP_RB_WPTR, wptr); */
+	trace_msm_gpu_wptr_update(gpu_read(gpu, REG_A6XX_CP_RB_WPTR), wptr);
+	/* if (wptr != gpu_read(gpu, REG_A6XX_CP_RB_WPTR)) { */
+	/* 	gpu_write(gpu, REG_A6XX_CP_RB_WPTR, wptr); */
+	/* } */
 	a6xx_gmu_fenced_write(a6xx_gpu,
 		REG_A6XX_CP_RB_WPTR,
 		wptr,
