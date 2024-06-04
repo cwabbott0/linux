@@ -169,14 +169,15 @@ static void a6xx_flush(struct msm_gpu *gpu, struct msm_ringbuffer *ring)
 	/* Make sure to wrap wptr if we need to */
 	wptr = get_wptr(ring);
 
-	spin_unlock_irqrestore(&ring->preempt_lock, flags);
-
 	/* Make sure everything is posted before making a decision */
 	mb();
 
 	/* Update HW if this is the current ring and we are not in preempt*/
-	if (a6xx_gpu->cur_ring == ring && !a6xx_in_preempt(a6xx_gpu))
+	if (a6xx_gpu->cur_ring == ring && !a6xx_in_preempt(a6xx_gpu) &&
+		wptr != gpu_read(gpu, REG_A6XX_CP_RB_WPTR))
 		gpu_write(gpu, REG_A6XX_CP_RB_WPTR, wptr);
+
+	spin_unlock_irqrestore(&ring->preempt_lock, flags);
 }
 
 static void get_stats_counter(struct msm_ringbuffer *ring, u32 counter,
