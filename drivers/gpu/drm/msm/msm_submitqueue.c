@@ -71,11 +71,6 @@ void msm_submitqueue_destroy(struct kref *kref)
 	struct msm_gpu_submitqueue *queue = container_of(kref,
 		struct msm_gpu_submitqueue, ref);
 
-	struct msm_gpu *gpu = queue->gpu;
-
-	if (gpu && gpu->funcs->submitqueue_close)
-		gpu->funcs->submitqueue_close(gpu, queue);
-
 	idr_destroy(&queue->fence_idr);
 
 	msm_file_private_put(queue->ctx);

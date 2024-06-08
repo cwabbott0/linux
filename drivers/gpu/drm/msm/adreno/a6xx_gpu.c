@@ -145,8 +145,6 @@ static void update_shadow_rptr(struct msm_gpu *gpu, struct msm_ringbuffer *ring)
 	/* Expanded APRIV doesn't need to issue the WHERE_AM_I opcode */
 	if (a6xx_gpu->has_whereami && !adreno_gpu->base.hw_apriv) {
 		OUT_PKT7(ring, CP_WHERE_AM_I, 2);
-		/* OUT_RING(ring, lower_32_bits(shadowptr(a6xx_gpu, ring))); */
-		/* OUT_RING(ring, upper_32_bits(shadowptr(a6xx_gpu, ring))); */
 		OUT_RING(ring, lower_32_bits(rbmemptr(ring, rptr)));
 		OUT_RING(ring, upper_32_bits(rbmemptr(ring, rptr)));
 	}
@@ -461,17 +459,6 @@ static void a7xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 			OUT_RING(ring, upper_32_bits(submit->cmd[i].iova));
 			OUT_RING(ring, submit->cmd[i].size);
 			ibs++;
-			/* struct msm_drm_private *priv = adreno_gpu->base.dev->dev_private; */
-			/* struct msm_gem_object *msm_obj; */
-			/* list_for_each_entry(msm_obj, &priv->objects, node) { */
-			/* 	struct msm_gem_vma *vma; */
-			/* 	list_for_each_entry(vma, &msm_obj->vmas, list) { */
-			/* 		if (submit->cmd[i].iova == vma->iova) { */
-			/* 			if (!msm_obj->vaddr) */
-			/* 				msm_gem_get_vaddr_locked(&msm_obj->base); */
-			/* 		} */
-			/* 	} */
-			/* } */
 			break;
 		}
 
@@ -547,27 +534,6 @@ static void a7xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 
 	OUT_PKT7(ring, CP_SET_MARKER, 1);
 	OUT_RING(ring, 0x100); /* IFPC enable */
-
-	OUT_PKT7(ring, CP_NOP, 4);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_PKT7(ring, CP_NOP, 4);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_PKT7(ring, CP_NOP, 4);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_PKT7(ring, CP_NOP, 4);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
-	OUT_RING(ring, 0xdeadbeef);
 
 	/* If preemption is enabled */
 	if (gpu->nr_rings > 1) {
@@ -800,7 +766,7 @@ static void a6xx_set_ubwc_config(struct msm_gpu *gpu)
 		  adreno_gpu->ubwc_config.min_acc_len << 23 | hbb_lo << 21);
 }
 
-static void gen7_patch_pwrup_reglist(struct msm_gpu *gpu)
+static void a7xx_patch_pwrup_reglist(struct msm_gpu *gpu)
 {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
 	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
@@ -871,7 +837,7 @@ static void gen7_patch_pwrup_reglist(struct msm_gpu *gpu)
 	}
 }
 
-static int a6xx_preempt_start(struct msm_gpu *gpu)
+static int a7xx_preempt_start(struct msm_gpu *gpu)
 {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
 	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
@@ -943,7 +909,7 @@ static int a7xx_cp_init(struct msm_gpu *gpu)
 	OUT_PKT7(ring, CP_THREAD_CONTROL, 1);
 	OUT_RING(ring, BIT(27));
 
-	gen7_patch_pwrup_reglist(gpu);
+	a7xx_patch_pwrup_reglist(gpu);
 
 	OUT_PKT7(ring, CP_ME_INIT, 7);
 
@@ -1102,15 +1068,14 @@ static int a6xx_ucode_load(struct msm_gpu *gpu)
 
 		msm_gem_object_set_name(a6xx_gpu->shadow_bo, "shadow");
 	}
-	//
-	// TODO maybe move out of here
+
 	a6xx_gpu->pwrup_reglist_ptr = msm_gem_kernel_new(gpu->dev, PAGE_SIZE,
-													 MSM_BO_WC /* | MSM_BO_MAP_PRIV */, gpu->aspace, &a6xx_gpu->pwrup_reglist_bo, &a6xx_gpu->pwrup_reglist_iova);
+													 MSM_BO_WC /* | MSM_BO_MAP_PRIV */,
+													 gpu->aspace, &a6xx_gpu->pwrup_reglist_bo,
+													 &a6xx_gpu->pwrup_reglist_iova);
 	((struct cpu_gpu_lock*)a6xx_gpu->pwrup_reglist_ptr)->ifpc_list_len = 0;
 	((struct cpu_gpu_lock*)a6xx_gpu->pwrup_reglist_ptr)->preemption_list_len = 0;
 	((struct cpu_gpu_lock*)a6xx_gpu->pwrup_reglist_ptr)->dynamic_list_len = 0;
-	DRM_DEV_ERROR(&gpu->pdev->dev,
-				  "!!!!!!!!!!!!!!!!!!!!allocated reglist at %llx size %ul\n", a6xx_gpu->pwrup_reglist_iova, PAGE_SIZE);
 
 	if (IS_ERR(a6xx_gpu->pwrup_reglist_ptr))
 		return PTR_ERR(a6xx_gpu->pwrup_reglist_ptr);
@@ -1519,7 +1484,7 @@ out:
 		return ret;
 
 	/* Last step - yield the ringbuffer */
-	a6xx_preempt_start(gpu);
+	a7xx_preempt_start(gpu);
 
 	/*
 	 * Tell the GMU that we are done touching the GPU and it can start power
