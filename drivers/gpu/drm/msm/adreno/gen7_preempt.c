@@ -190,7 +190,7 @@ void a6xx_preempt_hw_init(struct msm_gpu *gpu)
 	a6xx_gpu->cur_ring = gpu->rb[0];
 }
 
-void a6xx_preempt_trigger(struct msm_gpu *gpu)
+void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit)
 {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
 	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
@@ -198,15 +198,27 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu)
 	struct msm_ringbuffer *ring;
 	uint64_t user_ctx_iova;
 	unsigned int cntl;
+	enum a6xx_preempt_state state;
 
 	if (gpu->nr_rings == 1)
 		return;
 
 	/*
-	 * Try to start preemption by moving from NONE to START. If
-	 * unsuccessful, a preemption is already in flight
+	 * Try to start preemption by moving from NONE to EVALUATE. If
+	 * the current state is EVALUATE/ABORT we can't just quit because then
+	 * we can't guarantee that preempt_trigger will be called after the
+	 * ring is updated by the new submit.
 	 */
-	if (!try_preempt_state(a6xx_gpu, PREEMPT_NONE, PREEMPT_START))
+	state = atomic_cmpxchg(&a6xx_gpu->preempt_state, PREEMPT_NONE,
+			       PREEMPT_EVALUATE);
+	while (new_submit && (state == PREEMPT_EVALUATE ||
+			      state == PREEMPT_ABORT)) {
+		cpu_relax();
+		state = atomic_cmpxchg(&a6xx_gpu->preempt_state, PREEMPT_NONE,
+				       PREEMPT_EVALUATE);
+	}
+
+	if (state != PREEMPT_NONE)
 		return;
 
 	cntl = (((a6xx_gpu->preempt_level << 6) & 0xC0) |
@@ -226,6 +238,8 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu)
 		set_preempt_state(a6xx_gpu, PREEMPT_NONE);
 		return;
 	}
+
+	set_preempt_state(a6xx_gpu, PREEMPT_START);
 
 	trace_msm_gpu_preemption_trigger(a6xx_gpu->cur_ring ? a6xx_gpu->cur_ring->id: 1000, ring ? ring->id: 1000);
 

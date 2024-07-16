@@ -102,10 +102,12 @@ struct a6xx_gpu {
  * through the process.
  *
  * PREEMPT_NONE - no preemption in progress.  Next state START.
- * PREEMPT_START - The trigger is evaluating if preemption is possible. Next
- * states: TRIGGERED, NONE
+ * PREEMPT_EVALUATING - The trigger is evaluating if preemption is possible.
+ * Next states: START, ABORT
  * PREEMPT_ABORT - An intermediate state before moving back to NONE. Next
  * state: NONE.
+ * PREEMPT_START - The trigger is preparing for preemption. Next state:
+ * TRIGGERED.
  * PREEMPT_TRIGGERED: A preemption has been executed on the hardware. Next
  * states: FAULTED, PENDING
  * PREEMPT_FAULTED: A preemption timed out (never completed). This will trigger
@@ -117,6 +119,7 @@ struct a6xx_gpu {
 enum a6xx_preempt_state {
 	PREEMPT_NONE = 0,
 	PREEMPT_START,
+	PREEMPT_EVALUATE,
 	PREEMPT_ABORT,
 	PREEMPT_TRIGGERED,
 	PREEMPT_FAULTED,
@@ -273,7 +276,7 @@ int a6xx_gmu_fenced_write(struct a6xx_gpu *a6xx_gpu, unsigned int reg,
 
 void a6xx_preempt_init(struct msm_gpu *gpu);
 void a6xx_preempt_hw_init(struct msm_gpu *gpu);
-void a6xx_preempt_trigger(struct msm_gpu *gpu);
+void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit);
 void a6xx_preempt_irq(struct msm_gpu *gpu);
 void a6xx_preempt_fini(struct msm_gpu *gpu);
 int a6xx_preempt_submitqueue_setup(struct msm_gpu *gpu,
