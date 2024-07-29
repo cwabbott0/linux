@@ -1953,6 +1953,7 @@ static irqreturn_t a6xx_irq(struct msm_gpu *gpu)
 		a7xx_sw_fuse_violation_irq(gpu);
 
 	if (status & A6XX_RBBM_INT_0_MASK_CP_CACHE_FLUSH_TS) {
+		trace_msm_gpu_ts_irq(0);
 		msm_gpu_retire(gpu);
 		a6xx_preempt_trigger(gpu, false);
 	}

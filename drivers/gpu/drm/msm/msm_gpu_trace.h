@@ -280,6 +280,18 @@ TRACE_EVENT(msm_gpu_wptr_update,
 		TP_printk("ring %u wptr %x->%x", __entry->ring, __entry->old, __entry->new)
 );
 
+TRACE_EVENT(msm_gpu_ts_irq,
+		TP_PROTO(int dummy),
+		TP_ARGS(dummy),
+		TP_STRUCT__entry(
+			__field(u32, dummy)
+			),
+		TP_fast_assign(
+			__entry->dummy = dummy;
+			),
+		TP_printk("%u", __entry->dummy)
+);
+
 #endif
 
 #undef TRACE_INCLUDE_PATH
