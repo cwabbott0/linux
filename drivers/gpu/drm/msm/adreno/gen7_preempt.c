@@ -232,8 +232,10 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit)
 				       PREEMPT_EVALUATE);
 	}
 
-	if (state != PREEMPT_NONE)
+	if (state != PREEMPT_NONE) {
+		trace_msm_gpu_preempt_trigger_exit(1, new_submit, state);
 		return;
+	}
 
 	cntl = (((a6xx_gpu->preempt_level << 6) & 0xC0) |
 		((a6xx_gpu->skip_save_restore << 9) & 0x200) |
@@ -250,6 +252,7 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit)
 		set_preempt_state(a6xx_gpu, PREEMPT_ABORT);
 		update_wptr(gpu, a6xx_gpu->cur_ring);
 		set_preempt_state(a6xx_gpu, PREEMPT_NONE);
+		trace_msm_gpu_preempt_trigger_exit(2, new_submit, PREEMPT_NONE);
 		return;
 	}
 

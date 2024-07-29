@@ -292,6 +292,34 @@ TRACE_EVENT(msm_gpu_ts_irq,
 		TP_printk("%u", __entry->dummy)
 );
 
+TRACE_EVENT(msm_gpu_preempt_trigger_beginning,
+		TP_PROTO(int new_submit),
+		TP_ARGS(new_submit),
+		TP_STRUCT__entry(
+			__field(u32, new_submit)
+			),
+		TP_fast_assign(
+			__entry->new_submit = new_submit;
+			),
+		TP_printk("new_submit=%u", __entry->new_submit)
+);
+
+TRACE_EVENT(msm_gpu_preempt_trigger_exit,
+		TP_PROTO(int reason, int new_submit, int state),
+		TP_ARGS(reason, new_submit, state),
+		TP_STRUCT__entry(
+			__field(u32, reason)
+			__field(u32, new_submit)
+			__field(u32, state)
+			),
+		TP_fast_assign(
+			__entry->reason = reason;
+			__entry->new_submit = new_submit;
+			__entry->state = state;
+			),
+		TP_printk("reason=%u new_submit=%u state=%u", __entry->reason, __entry->new_submit, __entry->state)
+);
+
 #endif
 
 #undef TRACE_INCLUDE_PATH
