@@ -156,6 +156,7 @@ static void a6xx_flush(struct msm_gpu *gpu, struct msm_ringbuffer *ring)
 	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
 	uint32_t wptr;
 	unsigned long flags;
+	bool skipped_wptr_write;
 
 	update_shadow_rptr(gpu, ring);
 
@@ -171,9 +172,26 @@ static void a6xx_flush(struct msm_gpu *gpu, struct msm_ringbuffer *ring)
 	mb();
 
 	/* Update HW if this is the current ring and we are not in preempt*/
-	if (a6xx_gpu->cur_ring == ring && !a6xx_in_preempt(a6xx_gpu) &&
-		wptr != gpu_read(gpu, REG_A6XX_CP_RB_WPTR))
-		gpu_write(gpu, REG_A6XX_CP_RB_WPTR, wptr);
+	if (!a6xx_in_preempt(a6xx_gpu)) {
+		/*
+		 * Order the reads of the preempt state and cur_ring. This
+		 * matches the barrier after writing cur_ring.
+		 */
+		mb();
+
+		if (a6xx_gpu->cur_ring == ring) {
+			gpu_write(gpu, REG_A6XX_CP_RB_WPTR, wptr);
+			skipped_wptr_write = false;
+		} else {
+			ring->skip_inline_wptr = true;
+			skipped_wptr_write = true;
+		}
+	} else {
+		ring->skip_inline_wptr = true;
+		skipped_wptr_write = true;
+	}
+
+	trace_msm_gpu_submit_flush_wptr(ring, wptr, skipped_wptr_write);
 
 	spin_unlock_irqrestore(&ring->preempt_lock, flags);
 }

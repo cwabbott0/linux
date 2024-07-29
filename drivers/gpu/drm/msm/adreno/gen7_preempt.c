@@ -47,24 +47,26 @@ static inline void update_wptr(struct msm_gpu *gpu, struct msm_ringbuffer *ring)
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
 	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
 	unsigned long flags;
-	uint32_t wptr;
+	uint32_t wptr, cur_wptr;
 
 	if (!ring)
 		return;
 
 	spin_lock_irqsave(&ring->preempt_lock, flags);
-	wptr = get_wptr(ring);
 
-	/* Make sure everything is posted before making a decision */
-	mb();
+	if (ring->skip_inline_wptr) {
+		wptr = get_wptr(ring);
+		mb();
 
-	trace_msm_gpu_wptr_update(gpu_read(gpu, REG_A6XX_CP_RB_WPTR), wptr);
-	if (wptr != gpu_read(gpu, REG_A6XX_CP_RB_WPTR))
-		gpu_write(gpu, REG_A6XX_CP_RB_WPTR, wptr);
-	/* a6xx_gmu_fenced_write(a6xx_gpu, */
-	/* 	REG_A6XX_CP_RB_WPTR, */
-	/* 	wptr, */
-	/* 	FENCE_STATUS_WRITEDROPPED1_MASK); */
+		cur_wptr = gpu_read(gpu, REG_A6XX_CP_RB_WPTR);
+		trace_msm_gpu_wptr_update(ring, cur_wptr, wptr);
+
+		if (cur_wptr != wptr)
+			gpu_write(gpu, REG_A6XX_CP_RB_WPTR, wptr);
+
+		ring->skip_inline_wptr = false;
+	}
+
 	spin_unlock_irqrestore(&ring->preempt_lock, flags);
 }
 
@@ -152,10 +154,17 @@ void a6xx_preempt_irq(struct msm_gpu *gpu)
 	a6xx_gpu->cur_ring = a6xx_gpu->next_ring;
 	a6xx_gpu->next_ring = NULL;
 
+	/* Make sure the write to cur_ring is posted before the change in state */
+	mb();
+
+	set_preempt_state(a6xx_gpu, PREEMPT_ABORT);
+
 	update_wptr(gpu, a6xx_gpu->cur_ring);
 
 	trace_msm_gpu_preemption_irq(a6xx_gpu->cur_ring->id);
 	set_preempt_state(a6xx_gpu, PREEMPT_NONE);
+
+	a6xx_preempt_trigger(gpu, false);
 }
 
 void a6xx_preempt_hw_init(struct msm_gpu *gpu)
@@ -241,8 +250,6 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit)
 
 	set_preempt_state(a6xx_gpu, PREEMPT_START);
 
-	trace_msm_gpu_preemption_trigger(a6xx_gpu->cur_ring ? a6xx_gpu->cur_ring->id: 1000, ring ? ring->id: 1000);
-
 	spin_lock_irqsave(&ring->preempt_lock, flags);
 
 	struct gen7_cp_smmu_info *smmu_info_ptr = a6xx_gpu->preempt[ring->id] + PREEMPT_OFFSET_SMMU_INFO;
@@ -256,6 +263,18 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit)
 	smmu_info_ptr->context_idr = context_idr;
 	record_ptr->wptr = get_wptr(ring);
 	mb();
+
+	/*
+	 * The GPU will write the wptr we set above when we preempt. Reset
+	 * skip_inline_wptr to make sure that we don't write WPTR to the same
+	 * thing twice. It's still possible subsequent submissions will update
+	 * wptr again, in which case they will set the flag to true. This has
+	 * to be protected by the lock for setting the flag and updating wptr
+	 * to be atomic.
+	 */
+	ring->skip_inline_wptr = false;
+
+	trace_msm_gpu_preemption_trigger(a6xx_gpu->cur_ring ? a6xx_gpu->cur_ring->id: 1000, ring ? ring->id: 1000, get_wptr(ring));
 
 	spin_unlock_irqrestore(&ring->preempt_lock, flags);
 
@@ -323,6 +342,9 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit)
 
 	/* Set the preemption state to triggered */
 	set_preempt_state(a6xx_gpu, PREEMPT_TRIGGERED);
+
+	/* Make sure any previous writes to WPTR are posted */
+	gpu_read(gpu, REG_A6XX_CP_RB_WPTR);
 
 	/* Make sure everything is written before hitting the button */
 	wmb();

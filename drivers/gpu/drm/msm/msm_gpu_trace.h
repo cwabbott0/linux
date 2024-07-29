@@ -52,6 +52,23 @@ TRACE_EVENT(msm_gpu_submit_flush,
 		    __entry->ticks)
 );
 
+TRACE_EVENT(msm_gpu_submit_flush_wptr,
+	    TP_PROTO(struct msm_ringbuffer *ring, u32 wptr, bool skipped_wptr_write),
+	    TP_ARGS(ring, wptr, skipped_wptr_write),
+	    TP_STRUCT__entry(
+		    __field(u32, wptr)
+		    __field(u32, ring)
+		    __field(u32, skipped_wptr_write)
+		    ),
+	    TP_fast_assign(
+		    __entry->wptr = wptr;
+		    __entry->ring = ring->id;
+		    __entry->skipped_wptr_write = skipped_wptr_write;
+		    ),
+	    TP_printk("ring %u wptr=%x skipped=%u",
+		    __entry->ring, __entry->wptr, __entry->skipped_wptr_write)
+);
+
 
 TRACE_EVENT(msm_gpu_submit_retired,
 	    TP_PROTO(struct msm_gem_submit *submit, u64 elapsed, u64 clock,
@@ -178,17 +195,19 @@ TRACE_EVENT(msm_gpu_resume,
 );
 
 TRACE_EVENT(msm_gpu_preemption_trigger,
-		TP_PROTO(u32 ring_id_from, u32 ring_id_to),
-		TP_ARGS(ring_id_from, ring_id_to),
+		TP_PROTO(u32 ring_id_from, u32 ring_id_to, u32 wptr),
+		TP_ARGS(ring_id_from, ring_id_to, wptr),
 		TP_STRUCT__entry(
 			__field(u32, ring_id_from)
 			__field(u32, ring_id_to)
+			__field(u32, wptr)
 			),
 		TP_fast_assign(
 			__entry->ring_id_from = ring_id_from;
 			__entry->ring_id_to = ring_id_to;
+			__entry->wptr = wptr;
 			),
-		TP_printk("preempting %u -> %u", __entry->ring_id_from, __entry->ring_id_to)
+		TP_printk("preempting %u -> %u wptr %x", __entry->ring_id_from, __entry->ring_id_to, __entry->wptr)
 );
 
 TRACE_EVENT(msm_gpu_preemption_irq,
@@ -246,17 +265,19 @@ TRACE_EVENT(msm_gpu_write_ring,
 );
 
 TRACE_EVENT(msm_gpu_wptr_update,
-		TP_PROTO(u32 old, u32 new),
-		TP_ARGS(old, new),
+		TP_PROTO(struct msm_ringbuffer *ring, u32 old, u32 new),
+		TP_ARGS(ring, old, new),
 		TP_STRUCT__entry(
+			__field(u32, ring)
 			__field(u32, old)
 			__field(u32, new)
 			),
 		TP_fast_assign(
+			__entry->ring = ring->id;
 			__entry->old = old;
 			__entry->new = new;
 			),
-		TP_printk("wptr %x->%x", __entry->old, __entry->new)
+		TP_printk("ring %u wptr %x->%x", __entry->ring, __entry->old, __entry->new)
 );
 
 #endif
