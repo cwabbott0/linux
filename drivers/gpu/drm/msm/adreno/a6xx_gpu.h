@@ -66,6 +66,7 @@ struct a6xx_gpu {
 	atomic_t preempt_state;
 	spinlock_t eval_lock;
 	struct timer_list preempt_timer;
+	struct timer_list preempt_cooldown_timer;
 
 	unsigned int preempt_level;
 	bool uses_gmem;
