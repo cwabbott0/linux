@@ -276,7 +276,7 @@ int a6xx_gmu_fenced_write(struct a6xx_gpu *a6xx_gpu, unsigned int reg,
 
 void a6xx_preempt_init(struct msm_gpu *gpu);
 void a6xx_preempt_hw_init(struct msm_gpu *gpu);
-void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit);
+void a6xx_preempt_trigger(struct msm_gpu *gpu);
 void a6xx_preempt_irq(struct msm_gpu *gpu);
 void a6xx_preempt_fini(struct msm_gpu *gpu);
 int a6xx_preempt_submitqueue_setup(struct msm_gpu *gpu,
