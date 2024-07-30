@@ -64,6 +64,7 @@ struct a6xx_gpu {
 	uint32_t last_seqno[MSM_GPU_MAX_RINGS];
 
 	atomic_t preempt_state;
+	spinlock_t eval_lock;
 	struct timer_list preempt_timer;
 
 	unsigned int preempt_level;
@@ -120,7 +121,6 @@ struct a6xx_gpu {
 enum a6xx_preempt_state {
 	PREEMPT_NONE = 0,
 	PREEMPT_START,
-	PREEMPT_EVALUATE,
 	PREEMPT_ABORT,
 	PREEMPT_TRIGGERED,
 	PREEMPT_FAULTED,
@@ -277,7 +277,7 @@ int a6xx_gmu_fenced_write(struct a6xx_gpu *a6xx_gpu, unsigned int reg,
 
 void a6xx_preempt_init(struct msm_gpu *gpu);
 void a6xx_preempt_hw_init(struct msm_gpu *gpu);
-void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit);
+void a6xx_preempt_trigger(struct msm_gpu *gpu);
 void a6xx_preempt_irq(struct msm_gpu *gpu);
 void a6xx_preempt_fini(struct msm_gpu *gpu);
 int a6xx_preempt_submitqueue_setup(struct msm_gpu *gpu,

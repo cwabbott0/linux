@@ -169,7 +169,7 @@ void a6xx_preempt_irq(struct msm_gpu *gpu)
 	trace_msm_gpu_preemption_irq(a6xx_gpu->cur_ring->id);
 	set_preempt_state(a6xx_gpu, PREEMPT_NONE);
 
-	a6xx_preempt_trigger(gpu, false);
+	a6xx_preempt_trigger(gpu);
 }
 
 void a6xx_preempt_hw_init(struct msm_gpu *gpu)
@@ -200,15 +200,18 @@ void a6xx_preempt_hw_init(struct msm_gpu *gpu)
 	/* Reset the preemption state */
 	set_preempt_state(a6xx_gpu, PREEMPT_NONE);
 
+	spin_lock_init(&a6xx_gpu->eval_lock);
+
 	/* Always come up on rb 0 */
 	a6xx_gpu->cur_ring = gpu->rb[0];
 }
 
-void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit)
+void a6xx_preempt_trigger(struct msm_gpu *gpu)
 {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
 	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
-	unsigned long flags;
+	//TODO the spinlocks that use those are never nested so reuse flag instead
+	unsigned long flags, flags2;
 	struct msm_ringbuffer *ring;
 	uint64_t user_ctx_iova;
 	unsigned int cntl;
@@ -217,23 +220,20 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit)
 	if (gpu->nr_rings == 1)
 		return;
 
-	/*
-	 * Try to start preemption by moving from NONE to EVALUATE. If
-	 * the current state is EVALUATE/ABORT we can't just quit because then
-	 * we can't guarantee that preempt_trigger will be called after the
-	 * ring is updated by the new submit.
+    /*
+	 * Lock to make sure another thread attempting preemption doesn't skip it
+	 * while we are still evaluating the next ring. This makes sure the other
+	 * thread does start preemption if we abort it and avoids a soft lock.
 	 */
-	state = atomic_cmpxchg(&a6xx_gpu->preempt_state, PREEMPT_NONE,
-			       PREEMPT_EVALUATE);
-	while (new_submit && (state == PREEMPT_EVALUATE ||
-			      state == PREEMPT_ABORT)) {
-		cpu_relax();
-		state = atomic_cmpxchg(&a6xx_gpu->preempt_state, PREEMPT_NONE,
-				       PREEMPT_EVALUATE);
-	}
+	spin_lock_irqsave(&a6xx_gpu->eval_lock, flags2);
 
-	if (state != PREEMPT_NONE) {
-		trace_msm_gpu_preempt_trigger_exit(1, new_submit, state);
+	/*
+	 * Try to start preemption by moving from NONE to START. If
+	 * unsuccessful, a preemption is already in flight
+	 */
+	if (!try_preempt_state(a6xx_gpu, PREEMPT_NONE, PREEMPT_START)) {
+		trace_msm_gpu_preempt_trigger_exit(1, 0, state);
+		spin_unlock_irqrestore(&a6xx_gpu->eval_lock, flags2);
 		return;
 	}
 
@@ -252,11 +252,12 @@ void a6xx_preempt_trigger(struct msm_gpu *gpu, bool new_submit)
 		set_preempt_state(a6xx_gpu, PREEMPT_ABORT);
 		update_wptr(gpu, a6xx_gpu->cur_ring);
 		set_preempt_state(a6xx_gpu, PREEMPT_NONE);
-		trace_msm_gpu_preempt_trigger_exit(2, new_submit, PREEMPT_NONE);
+		trace_msm_gpu_preempt_trigger_exit(2, 0, PREEMPT_NONE);
+		spin_unlock_irqrestore(&a6xx_gpu->eval_lock, flags2);
 		return;
 	}
 
-	set_preempt_state(a6xx_gpu, PREEMPT_START);
+	spin_unlock_irqrestore(&a6xx_gpu->eval_lock, flags2);
 
 	spin_lock_irqsave(&ring->preempt_lock, flags);
 

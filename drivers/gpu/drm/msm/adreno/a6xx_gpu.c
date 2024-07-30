@@ -602,7 +602,7 @@ static void a7xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 	a6xx_flush(gpu, ring);
 
 	/* Check to see if we need to start preemption */
-	a6xx_preempt_trigger(gpu, true);
+	a6xx_preempt_trigger(gpu);
 }
 
 static void a6xx_set_hwcg(struct msm_gpu *gpu, bool state)
@@ -1957,7 +1957,7 @@ static irqreturn_t a6xx_irq(struct msm_gpu *gpu)
 	if (status & A6XX_RBBM_INT_0_MASK_CP_CACHE_FLUSH_TS) {
 		trace_msm_gpu_ts_irq(0);
 		msm_gpu_retire(gpu);
-		a6xx_preempt_trigger(gpu, false);
+		a6xx_preempt_trigger(gpu);
 	}
 
 	if (status & A6XX_RBBM_INT_0_MASK_CP_SW)
