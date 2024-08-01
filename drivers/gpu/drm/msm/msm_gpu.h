@@ -275,8 +275,14 @@ struct msm_gpu {
 	/* work for handling active-list retiring: */
 	struct kthread_work retire_work;
 
+	/* work for handling preemption cooldown: */
+	struct kthread_work preempt_work;
+
 	/* worker for retire/recover: */
 	struct kthread_worker *worker;
+
+	/* worker for preemption: */
+	struct kthread_worker *preempt_worker;
 
 	struct drm_gem_object *memptrs_bo;
 

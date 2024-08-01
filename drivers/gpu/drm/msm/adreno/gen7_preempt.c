@@ -127,6 +127,20 @@ static void a6xx_preempt_cooldown_timer(struct timer_list *t)
 	a6xx_preempt_trigger(gpu);
 }
 
+static void a6xx_preempt_cooldown_worker(struct kthread_work *work)
+{
+	struct msm_gpu *gpu = container_of(work, struct msm_gpu, preempt_work);
+	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
+	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
+
+	while (gpu_read(gpu, REG_A6XX_PC_MARKER) == a6xx_gpu->marker_val)
+		yield();
+
+	set_preempt_state(a6xx_gpu, PREEMPT_NONE);
+
+	a6xx_preempt_trigger(gpu);
+}
+
 void a6xx_preempt_irq(struct msm_gpu *gpu)
 {
 	uint32_t status;
@@ -178,7 +192,9 @@ void a6xx_preempt_irq(struct msm_gpu *gpu)
 
 	trace_msm_gpu_preemption_irq(a6xx_gpu->cur_ring->id);
 
-	mod_timer(&a6xx_gpu->preempt_cooldown_timer, jiffies + usecs_to_jiffies(1000));
+	//mod_timer(&a6xx_gpu->preempt_cooldown_timer, jiffies + usecs_to_jiffies(1000));
+	a6xx_gpu->marker_val = gpu_read(gpu, REG_A6XX_PC_MARKER);
+	kthread_queue_work(gpu->preempt_worker, &gpu->preempt_work);
 }
 
 void a6xx_preempt_hw_init(struct msm_gpu *gpu)
@@ -439,6 +455,9 @@ void a6xx_preempt_fini(struct msm_gpu *gpu)
 
 	for (i = 0; i < gpu->nr_rings; i++)
 		msm_gem_kernel_put(a6xx_gpu->preempt_bo[i], gpu->aspace);
+
+	if (gpu->preempt_worker)
+		kthread_destroy_worker(gpu->preempt_worker);
 }
 
 void a6xx_preempt_init(struct msm_gpu *gpu)
@@ -459,7 +478,7 @@ void a6xx_preempt_init(struct msm_gpu *gpu)
 	/* TODO: make this configurable? */
 	a6xx_gpu->preempt_level = 1;
 	a6xx_gpu->uses_gmem = 1;
-	a6xx_gpu->skip_save_restore = 0;
+	a6xx_gpu->skip_save_restore = 1;
 
 	a6xx_gpu->scratch_ptr  = msm_gem_kernel_new(gpu->dev,
 			gpu->nr_rings * sizeof(uint64_t), MSM_BO_WC,
@@ -469,11 +488,19 @@ void a6xx_preempt_init(struct msm_gpu *gpu)
 	if (IS_ERR(a6xx_gpu->scratch_ptr))
 		goto fail;
 
+	gpu->preempt_worker = kthread_create_worker(0, "gpu-preempt-worker");
+	if (IS_ERR(gpu->preempt_worker)) {
+		gpu->preempt_worker = NULL;
+		goto fail;
+	}
+
 	timer_setup(&a6xx_gpu->preempt_timer, a6xx_preempt_timer,
 			(unsigned long) a6xx_gpu);
 
 	timer_setup(&a6xx_gpu->preempt_cooldown_timer, a6xx_preempt_cooldown_timer,
 			(unsigned long) a6xx_gpu);
+
+	kthread_init_work(&gpu->preempt_work, a6xx_preempt_cooldown_worker);
 
 	return;
 fail:

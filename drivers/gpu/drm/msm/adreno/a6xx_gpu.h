@@ -76,6 +76,8 @@ struct a6xx_gpu {
 	void *scratch_ptr;
 	uint64_t scratch_iova;
 
+	uint32_t marker_val;
+
 	struct a6xx_gmu gmu;
 
 	struct drm_gem_object *shadow_bo;
