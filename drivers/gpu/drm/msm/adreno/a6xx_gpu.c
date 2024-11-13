@@ -335,10 +335,10 @@ static void a7xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 	a6xx_set_pagetable(a6xx_gpu, ring, submit->queue->ctx);
 
 	/*
-	 * If preemption is enabled, then set the pseudo register for the save
-	 * sequence
+	 * If preemption is enabled or we have an AQE, then set the pseudo
+	 * register for the save sequence
 	 */
-	if (gpu->nr_rings > 1)
+	if (gpu->nr_rings > 1 || adreno_has_aqe(adreno_gpu))
 		a6xx_emit_set_pseudo_reg(ring, a6xx_gpu, submit->queue);
 
 	get_stats_counter(ring, REG_A7XX_RBBM_PERFCTR_CP(0),
@@ -933,6 +933,23 @@ static int a6xx_ucode_load(struct msm_gpu *gpu)
 			return -EPERM;
 		}
 	}
+	if (adreno_has_aqe(adreno_gpu) && !a6xx_gpu->aqe_bo) {
+		a6xx_gpu->aqe_bo = adreno_fw_create_bo(gpu,
+			adreno_gpu->fw[ADRENO_FW_AQE],
+			&a6xx_gpu->aqe_iova);
+
+		if (IS_ERR(a6xx_gpu->aqe_bo)) {
+			int ret = PTR_ERR(a6xx_gpu->aqe_bo);
+
+			a6xx_gpu->sqe_bo = NULL;
+			DRM_DEV_ERROR(&gpu->pdev->dev,
+				"Could not allocate AQE ucode: %d\n", ret);
+
+			return ret;
+		}
+
+		msm_gem_object_set_name(a6xx_gpu->sqe_bo, "aqefw");
+	}
 
 	/*
 	 * Expanded APRIV and targets that support WHERE_AM_I both need a
@@ -1014,6 +1031,8 @@ static int a6xx_zap_shader_init(struct msm_gpu *gpu)
 #define A7XX_BR_APRIVMASK (A7XX_APRIV_MASK | \
 			   A6XX_CP_APRIV_CNTL_CDREAD | \
 			   A6XX_CP_APRIV_CNTL_CDWRITE)
+
+#define A7XX_AQE_APRIV_MASK A6XX_CP_APRIV_CNTL_ICACHE
 
 static int hw_init(struct msm_gpu *gpu)
 {
@@ -1249,6 +1268,9 @@ static int hw_init(struct msm_gpu *gpu)
 				  A7XX_APRIV_MASK);
 			gpu_write(gpu, REG_A7XX_CP_LPAC_APRIV_CNTL,
 				  A7XX_APRIV_MASK);
+			if (adreno_has_aqe(adreno_gpu))
+				gpu_write(gpu, REG_A7XX_CP_AQE_APRIV_CNTL,
+					  A7XX_AQE_APRIV_MASK);
 		} else
 			gpu_write(gpu, REG_A6XX_CP_APRIV_CNTL,
 				  BIT(6) | BIT(5) | BIT(3) | BIT(2) | BIT(1));
@@ -1274,6 +1296,10 @@ static int hw_init(struct msm_gpu *gpu)
 		goto out;
 
 	gpu_write64(gpu, REG_A6XX_CP_SQE_INSTR_BASE, a6xx_gpu->sqe_iova);
+
+	if (adreno_has_aqe(adreno_gpu))
+		gpu_write64(gpu, REG_A7XX_CP_AQE_INSTR_BASE_0,
+				a6xx_gpu->aqe_iova);
 
 	/* Set the ringbuffer address */
 	gpu_write64(gpu, REG_A6XX_CP_RB_BASE, gpu->rb[0]->iova);
@@ -1643,6 +1669,29 @@ static void a6xx_cp_hw_err_irq(struct msm_gpu *gpu)
 	if (status & A6XX_CP_INT_CP_ILLEGAL_INSTR_ERROR)
 		dev_err_ratelimited(&gpu->pdev->dev, "CP illegal instruction error\n");
 
+	if (status & A6XX_CP_INT_CP_OPCODE_ERROR)
+		dev_err_ratelimited(&gpu->pdev->dev, "CP AQE0 opcode error");
+
+	if (status & A6XX_CP_INT_CP_OPCODE_ERROR_AQE0) {
+		u32 val;
+
+		gpu_write(gpu, REG_A7XX_CP_AQE_STAT_ADDR_0, 1);
+		val = gpu_read(gpu, REG_A7XX_CP_AQE_STAT_DATA_0);
+		dev_err_ratelimited(&gpu->pdev->dev,
+			"CP | AQE0 opcode error | possible opcode=0x%8.8X\n",
+			val);
+	}
+
+	if (status & A6XX_CP_INT_CP_UCODE_ERROR_AQE0)
+		dev_err_ratelimited(&gpu->pdev->dev,
+			"CP AQE0 ucode error interrupt\n");
+
+	if (status & A6XX_CP_INT_CP_HW_FAULT_ERROR_AQE0)
+		dev_err_ratelimited(&gpu->pdev->dev, "CP | AQE0 HW fault | status=0x%8.8X\n",
+			gpu_read(gpu, REG_A7XX_CP_AQE_HW_FAULT_0));
+
+	if (status & A6XX_CP_INT_CP_ILLEGAL_INSTR_ERROR_AQE0)
+		dev_err_ratelimited(&gpu->pdev->dev, "CP AQE0 illegal instruction error\n");
 }
 
 static void a6xx_fault_detect_irq(struct msm_gpu *gpu)
@@ -2520,7 +2569,12 @@ struct msm_gpu *a6xx_gpu_init(struct drm_device *dev)
 
 	a6xx_calc_ubwc_config(adreno_gpu);
 	/* Set up the preemption specific bits and pieces for each ringbuffer */
-	a6xx_preempt_init(gpu);
+	ret = a6xx_preempt_init(gpu);
+
+	if (ret) {
+		a6xx_destroy(&(a6xx_gpu->base.base));
+		return ERR_PTR(ret);
+	}
 
 	return gpu;
 }

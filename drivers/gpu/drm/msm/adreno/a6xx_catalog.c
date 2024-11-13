@@ -1400,6 +1400,7 @@ static const struct adreno_info a7xx_gpus[] = {
 		.fw = {
 			[ADRENO_FW_SQE] = "gen70900_sqe.fw",
 			[ADRENO_FW_GMU] = "gmu_gen70900.bin",
+			[ADRENO_FW_AQE] = "gen70900_aqe.fw",
 		},
 		.gmem = 3 * SZ_1M,
 		.inactive_period = DRM_MSM_INACTIVE_PERIOD,

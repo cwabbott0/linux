@@ -49,8 +49,8 @@ struct a6xx_info {
 struct a6xx_gpu {
 	struct adreno_gpu base;
 
-	struct drm_gem_object *sqe_bo;
-	uint64_t sqe_iova;
+	struct drm_gem_object *sqe_bo, *aqe_bo;
+	uint64_t sqe_iova, aqe_iova;
 
 	struct msm_ringbuffer *cur_ring;
 	struct msm_ringbuffer *next_ring;
@@ -250,7 +250,7 @@ int a6xx_gmu_init(struct a6xx_gpu *a6xx_gpu, struct device_node *node);
 int a6xx_gmu_wrapper_init(struct a6xx_gpu *a6xx_gpu, struct device_node *node);
 void a6xx_gmu_remove(struct a6xx_gpu *a6xx_gpu);
 
-void a6xx_preempt_init(struct msm_gpu *gpu);
+int a6xx_preempt_init(struct msm_gpu *gpu);
 void a6xx_preempt_hw_init(struct msm_gpu *gpu);
 void a6xx_preempt_trigger(struct msm_gpu *gpu);
 void a6xx_preempt_irq(struct msm_gpu *gpu);

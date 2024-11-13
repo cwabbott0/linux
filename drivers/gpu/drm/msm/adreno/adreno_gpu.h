@@ -26,6 +26,7 @@ enum {
 	ADRENO_FW_PFP = 1,
 	ADRENO_FW_GMU = 1, /* a6xx */
 	ADRENO_FW_GPMU = 2,
+	ADRENO_FW_AQE = 3,
 	ADRENO_FW_MAX,
 };
 
@@ -559,6 +560,11 @@ static inline int adreno_is_a7xx(struct adreno_gpu *gpu)
 	/* Update with non-fake (i.e. non-A702) Gen 7 GPUs */
 	return gpu->info->family == ADRENO_7XX_GEN1 ||
 	       adreno_is_a740_family(gpu);
+}
+
+static inline int adreno_has_aqe(struct adreno_gpu *gpu)
+{
+	return adreno_is_a750(gpu);
 }
 
 u64 adreno_private_address_space_size(struct msm_gpu *gpu);

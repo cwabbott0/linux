@@ -408,20 +408,34 @@ void a6xx_preempt_fini(struct msm_gpu *gpu)
 		msm_gem_kernel_put(a6xx_gpu->preempt_bo[i], gpu->aspace);
 }
 
-void a6xx_preempt_init(struct msm_gpu *gpu)
+int a6xx_preempt_init(struct msm_gpu *gpu)
 {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
 	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
 	int i;
+	int ret;
+
+	for (i = 0; i < gpu->nr_rings; i++) {
+		ret = preempt_init_ring(a6xx_gpu, gpu->rb[i]);
+		if (ret) {
+			/*
+			 * On GPUs with AQE, having at least ring0 preemption
+			 * record is required, because the AQE uses the
+			 * preemption record as a scratch space.
+			 */
+			if (i == 0 && adreno_has_aqe(adreno_gpu)) {
+				a6xx_preempt_fini(gpu);
+				DRM_DEV_ERROR(&gpu->pdev->dev,
+						"allocating ring0 preempt record failed\n");
+				return ret;
+			} else
+				goto fail;
+		}
+	}
 
 	/* No preemption if we only have one ring */
 	if (gpu->nr_rings <= 1)
-		return;
-
-	for (i = 0; i < gpu->nr_rings; i++) {
-		if (preempt_init_ring(a6xx_gpu, gpu->rb[i]))
-			goto fail;
-	}
+		return 0;
 
 	/* TODO: make this configurable? */
 	a6xx_gpu->preempt_level = 1;
@@ -441,7 +455,7 @@ void a6xx_preempt_init(struct msm_gpu *gpu)
 
 	timer_setup(&a6xx_gpu->preempt_timer, a6xx_preempt_timer, 0);
 
-	return;
+	return 0;
 fail:
 	/*
 	 * On any failure our adventure is over. Clean up and
@@ -453,5 +467,5 @@ fail:
 	DRM_DEV_ERROR(&gpu->pdev->dev,
 				  "preemption init failed, disabling preemption\n");
 
-	return;
+	return 0;
 }
