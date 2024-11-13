@@ -24,6 +24,12 @@ struct a6xx_gpu_state_obj {
 	u32 count;	/* optional, used when count potentially read from hw */
 };
 
+struct a6xx_preempt_record_state_obj {
+	void *data;
+	size_t size;
+	bool encoded;
+};
+
 struct a6xx_gpu_state {
 	struct msm_gpu_state base;
 
@@ -52,6 +58,8 @@ struct a6xx_gpu_state {
 
 	struct a6xx_gpu_state_obj *cx_debugbus;
 	int nr_cx_debugbus;
+
+	struct a6xx_preempt_record_state_obj preemption[MSM_GPU_MAX_RINGS];
 
 	struct msm_gpu_state_bo *gmu_log;
 	struct msm_gpu_state_bo *gmu_hfi;
@@ -1169,6 +1177,33 @@ static void a7xx_get_ahb_gpu_reglist(struct msm_gpu *gpu,
 	a7xx_get_ahb_gpu_registers(gpu, a6xx_state, regs->regs, obj);
 }
 
+static void a6xx_snapshot_preempt_record(struct msm_gpu *gpu,
+		struct a6xx_gpu_state *a6xx_state,
+		struct a6xx_preempt_record_state_obj *snapshot,
+		struct msm_ringbuffer *ring)
+{
+	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
+	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
+
+	if (!a6xx_gpu->preempt[ring->id])
+		return;
+
+	if (adreno_is_a7xx(adreno_gpu))
+		snapshot->size = 96 * SZ_1K;
+	else
+		snapshot->size = 64 * SZ_1K;
+
+	/* Snapshot extra data used by AQE */
+	if (adreno_has_aqe(adreno_gpu))
+		snapshot->size += 16 * SZ_1K;
+
+	snapshot->data = kvzalloc(snapshot->size, GFP_KERNEL);
+	if (!snapshot->data)
+		return;
+
+	memcpy(snapshot->data, a6xx_gpu->preempt[ring->id], snapshot->size);
+}
+
 /* Read a block of GMU registers */
 static void _a6xx_get_gmu_registers(struct msm_gpu *gpu,
 		struct a6xx_gpu_state *a6xx_state,
@@ -1562,6 +1597,7 @@ struct msm_gpu_state *a6xx_gpu_state_get(struct msm_gpu *gpu)
 		GFP_KERNEL);
 	bool stalled = !!(gpu_read(gpu, REG_A6XX_RBBM_STATUS3) &
 			A6XX_RBBM_STATUS3_SMMU_STALLED_ON_FAULT);
+	int i;
 
 	if (!a6xx_state)
 		return ERR_PTR(-ENOMEM);
@@ -1626,6 +1662,11 @@ struct msm_gpu_state *a6xx_gpu_state_get(struct msm_gpu *gpu)
 		}
 	}
 
+	for (i = 0; i < gpu->nr_rings; i++)
+		a6xx_snapshot_preempt_record(gpu, a6xx_state,
+				&a6xx_state->preemption[i],
+				gpu->rb[i]);
+
 	if (snapshot_debugbus)
 		a6xx_get_debugbus(gpu, a6xx_state);
 
@@ -1641,6 +1682,7 @@ static void a6xx_gpu_state_destroy(struct kref *kref)
 			struct msm_gpu_state, ref);
 	struct a6xx_gpu_state *a6xx_state = container_of(state,
 			struct a6xx_gpu_state, base);
+	int i;
 
 	if (a6xx_state->gmu_log)
 		kvfree(a6xx_state->gmu_log->data);
@@ -1650,6 +1692,11 @@ static void a6xx_gpu_state_destroy(struct kref *kref)
 
 	if (a6xx_state->gmu_debug)
 		kvfree(a6xx_state->gmu_debug->data);
+
+	for (i = 0; i < MSM_GPU_MAX_RINGS; i++) {
+		if (a6xx_state->preemption[i].data)
+			kvfree(a6xx_state->preemption[i].data);
+	}
 
 	list_for_each_entry_safe(obj, tmp, &a6xx_state->objs, node) {
 		list_del(&obj->node);
@@ -2046,6 +2093,19 @@ void a6xx_show(struct msm_gpu *gpu, struct msm_gpu_state *state,
 			a7xx_show_dbgahb_cluster(&a6xx_state->dbgahb_clusters[i], p);
 		else
 			a6xx_show_dbgahb_cluster(&a6xx_state->dbgahb_clusters[i], p);
+	}
+
+	drm_puts(p, "preempt-records:\n");
+	for (i = 0; i < gpu->nr_rings; i++) {
+		struct a6xx_preempt_record_state_obj *preempt =
+			&a6xx_state->preemption[i];
+		if (!preempt->data)
+			continue;
+
+		drm_printf(p, "    ring: %u\n", i);
+		drm_printf(p, "    size: %zu\n", preempt->size);
+		adreno_show_object(p, &preempt->data, preempt->size,
+				&preempt->encoded);
 	}
 
 	drm_puts(p, "debugbus:\n");
