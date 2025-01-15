@@ -332,6 +332,12 @@ static int msm_fault_handler(struct iommu_domain *domain, struct device *dev,
 		ptr = &info;
 	}
 
+	/* Disable stall-on-fault so that subsequent storms of page faults
+	 * don't overwhelm the system.
+	 */
+	if (adreno_smmu->set_stall_dynamic)
+		adreno_smmu->set_stall_dynamic(adreno_smmu->cookie, false);
+
 	if (iommu->base.handler)
 		return iommu->base.handler(iommu->base.arg, iova, flags, ptr);
 
