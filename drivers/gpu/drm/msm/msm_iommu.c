@@ -337,9 +337,6 @@ static int msm_fault_handler(struct iommu_domain *domain, struct device *dev,
 
 	pr_warn_ratelimited("*** fault: iova=%16lx, flags=%d\n", iova, flags);
 
-	if (mmu->funcs->resume_translation)
-		mmu->funcs->resume_translation(mmu);
-
 	return 0;
 }
 
