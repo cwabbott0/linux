@@ -66,6 +66,7 @@ struct adreno_smmu_priv {
     int (*set_ttbr0_cfg)(const void *cookie, const struct io_pgtable_cfg *cfg);
     void (*get_fault_info)(const void *cookie, struct adreno_smmu_fault_info *info);
     void (*set_stall)(const void *cookie, bool enabled);
+    void (*set_stall_dynamic)(const void *cookie, bool enabled);
     void (*resume_translation)(const void *cookie, bool terminate);
 };
 
