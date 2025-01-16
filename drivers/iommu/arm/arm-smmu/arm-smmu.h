@@ -447,6 +447,7 @@ struct arm_smmu_impl {
 	irqreturn_t (*global_fault)(int irq, void *dev);
 	irqreturn_t (*context_fault)(int irq, void *dev);
 	bool context_fault_needs_threaded_irq;
+	bool stall_on_fault_disable_irq;
 	int (*alloc_context_bank)(struct arm_smmu_domain *smmu_domain,
 				  struct arm_smmu_device *smmu,
 				  struct device *dev, int start);

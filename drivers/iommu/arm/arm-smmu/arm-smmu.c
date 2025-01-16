@@ -469,6 +469,13 @@ static irqreturn_t arm_smmu_context_fault(int irq, void *dev)
 	if (ret == -ENOSYS && __ratelimit(&rs))
 		arm_smmu_print_context_fault_info(smmu, idx, &cfi);
 
+	if (smmu->impl->stall_on_fault_disable_irq &&
+			(cfi.fsr & ARM_SMMU_CB_FSR_SS)) {
+		u32 val = arm_smmu_cb_read(smmu, idx, ARM_SMMU_CB_SCTLR);
+		val &= ~ARM_SMMU_SCTLR_CFIE;
+		arm_smmu_cb_write(smmu, idx, ARM_SMMU_CB_SCTLR, val);
+	}
+
 	arm_smmu_cb_write(smmu, idx, ARM_SMMU_CB_FSR, cfi.fsr);
 	return IRQ_HANDLED;
 }
