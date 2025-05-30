@@ -1693,20 +1693,11 @@ static void a6xx_cp_hw_err_irq(struct msm_gpu *gpu)
 
 }
 
-static void a6xx_fault_detect_irq(struct msm_gpu *gpu)
+static void a6xx_fault(struct msm_gpu *gpu, const char *reason)
 {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
 	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
 	struct msm_ringbuffer *ring = gpu->funcs->active_ring(gpu);
-
-	/*
-	 * If stalled on SMMU fault, we could trip the GPU's hang detection,
-	 * but the fault handler will trigger the devcore dump, and we want
-	 * to otherwise resume normally rather than killing the submit, so
-	 * just bail.
-	 */
-	if (gpu_read(gpu, REG_A6XX_RBBM_STATUS3) & A6XX_RBBM_STATUS3_SMMU_STALLED_ON_FAULT)
-		return;
 
 	/*
 	 * Force the GPU to stay on until after we finish
@@ -1716,8 +1707,8 @@ static void a6xx_fault_detect_irq(struct msm_gpu *gpu)
 		gmu_write(&a6xx_gpu->gmu, REG_A6XX_GMU_GMU_PWR_COL_KEEPALIVE, 1);
 
 	DRM_DEV_ERROR(&gpu->pdev->dev,
-		"gpu fault ring %d fence %x status %8.8X rb %4.4x/%4.4x ib1 %16.16llX/%4.4x ib2 %16.16llX/%4.4x\n",
-		ring ? ring->id : -1, ring ? ring->fctx->last_fence : 0,
+		"%s ring %d fence %x status %8.8X rb %4.4x/%4.4x ib1 %16.16llX/%4.4x ib2 %16.16llX/%4.4x\n",
+		reason, ring ? ring->id : -1, ring ? ring->fctx->last_fence : 0,
 		gpu_read(gpu, REG_A6XX_RBBM_STATUS),
 		gpu_read(gpu, REG_A6XX_CP_RB_RPTR),
 		gpu_read(gpu, REG_A6XX_CP_RB_WPTR),
@@ -1730,6 +1721,30 @@ static void a6xx_fault_detect_irq(struct msm_gpu *gpu)
 	timer_delete(&gpu->hangcheck_timer);
 
 	kthread_queue_work(gpu->worker, &gpu->recover_work);
+}
+
+static void a6xx_fault_detect_irq(struct msm_gpu *gpu)
+{
+	/*
+	 * If stalled on SMMU fault, we could trip the GPU's hang detection,
+	 * but the fault handler will trigger the devcore dump, and we want
+	 * to otherwise resume normally rather than killing the submit, so
+	 * just bail.
+	 */
+	if (gpu_read(gpu, REG_A6XX_RBBM_STATUS3) & A6XX_RBBM_STATUS3_SMMU_STALLED_ON_FAULT)
+		return;
+
+	a6xx_fault(gpu, "gpu fault");
+}
+
+static void a6xx_rbbm_gpc_irq(struct msm_gpu *gpu)
+{
+	/* This can cause an interrupt storm so we have to disable interrupts
+	 * altogether until the GPU is recovered.
+	 */
+	gpu_write(gpu, REG_A6XX_RBBM_INT_0_MASK, 0);
+
+	a6xx_fault(gpu, "RBBM GPC error");
 }
 
 static void a7xx_sw_fuse_violation_irq(struct msm_gpu *gpu)
@@ -1746,11 +1761,8 @@ static void a7xx_sw_fuse_violation_irq(struct msm_gpu *gpu)
 	 * to legacy blending.
 	 */
 	if (status & (A7XX_CX_MISC_SW_FUSE_VALUE_RAYTRACING |
-		      A7XX_CX_MISC_SW_FUSE_VALUE_LPAC)) {
-		timer_delete(&gpu->hangcheck_timer);
-
-		kthread_queue_work(gpu->worker, &gpu->recover_work);
-	}
+		      A7XX_CX_MISC_SW_FUSE_VALUE_LPAC))
+		a6xx_fault(gpu, "SW fuse violation");
 }
 
 static irqreturn_t a6xx_irq(struct msm_gpu *gpu)
@@ -1765,6 +1777,9 @@ static irqreturn_t a6xx_irq(struct msm_gpu *gpu)
 
 	if (status & A6XX_RBBM_INT_0_MASK_RBBM_HANG_DETECT)
 		a6xx_fault_detect_irq(gpu);
+
+	if (status & A6XX_RBBM_INT_0_MASK_RBBM_GPC_ERROR)
+		a6xx_rbbm_gpc_irq(gpu);
 
 	if (status & A6XX_RBBM_INT_0_MASK_CP_AHB_ERROR)
 		dev_err_ratelimited(&gpu->pdev->dev, "CP | AHB bus error\n");
