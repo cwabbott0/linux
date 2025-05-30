@@ -1461,7 +1461,10 @@ static void a6xx_recover(struct msm_gpu *gpu)
 	a6xx_gpu->hung = true;
 
 	/* Halt SQE first */
-	gpu_write(gpu, REG_A6XX_CP_SQE_CNTL, 3);
+	if (adreno_is_a7xx(adreno_gpu))
+		gpu_write(gpu, REG_A6XX_CP_SQE_CNTL, 0);
+	else
+		gpu_write(gpu, REG_A6XX_CP_SQE_CNTL, 3);
 
 	pm_runtime_dont_use_autosuspend(&gpu->pdev->dev);
 
