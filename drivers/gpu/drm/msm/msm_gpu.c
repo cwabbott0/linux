@@ -380,30 +380,27 @@ static void recover_worker(struct kthread_work *work)
 
 	submit = find_submit(cur_ring, cur_ring->memptrs->fence + 1);
 
-	/*
-	 * If the submit retired while we were waiting for the worker to run,
-	 * or waiting to acquire the gpu lock, then nothing more to do.
-	 */
-	if (!submit)
-		goto out_unlock;
-
 	/* Increment the fault counts */
-	submit->queue->faults++;
-	if (submit->aspace)
-		submit->aspace->faults++;
+	if (submit) {
+		submit->queue->faults++;
+		if (submit->aspace)
+			submit->aspace->faults++;
 
-	get_comm_cmdline(submit, &comm, &cmd);
+		get_comm_cmdline(submit, &comm, &cmd);
 
-	if (comm && cmd) {
-		DRM_DEV_ERROR(dev->dev, "%s: offending task: %s (%s)\n",
-			      gpu->name, comm, cmd);
+		if (comm && cmd) {
+			DRM_DEV_ERROR(dev->dev, "%s: offending task: %s (%s)\n",
+				      gpu->name, comm, cmd);
 
-		msm_rd_dump_submit(priv->hangrd, submit,
-				   "offending task: %s (%s)", comm, cmd);
+			msm_rd_dump_submit(priv->hangrd, submit,
+					   "offending task: %s (%s)", comm, cmd);
+		} else {
+			DRM_DEV_ERROR(dev->dev, "%s: offending task: unknown\n", gpu->name);
+
+			msm_rd_dump_submit(priv->hangrd, submit, NULL);
+		}
 	} else {
-		DRM_DEV_ERROR(dev->dev, "%s: offending task: unknown\n", gpu->name);
-
-		msm_rd_dump_submit(priv->hangrd, submit, NULL);
+		DRM_DEV_ERROR(dev->dev, "%s: offending task: unknown (submit retired)\n", gpu->name);
 	}
 
 	/* Record the crash state */
@@ -427,7 +424,7 @@ static void recover_worker(struct kthread_work *work)
 		 * For the current (faulting?) ring/submit advance the fence by
 		 * one more to clear the faulting submit
 		 */
-		if (ring == cur_ring)
+		if (ring == cur_ring && submit)
 			ring->memptrs->fence = ++fence;
 
 		msm_update_fence(ring->fctx, fence);
@@ -456,7 +453,6 @@ static void recover_worker(struct kthread_work *work)
 
 	pm_runtime_put(&gpu->pdev->dev);
 
-out_unlock:
 	mutex_unlock(&gpu->lock);
 
 	msm_gpu_retire(gpu);
