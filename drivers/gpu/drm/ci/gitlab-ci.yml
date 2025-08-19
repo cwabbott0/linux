@@ -30,8 +30,11 @@ variables:
   S3_GITCACHE_BUCKET: git-cache
   # Bucket for the pipeline artifacts pushed to S3
   S3_ARTIFACTS_BUCKET: artifacts
+  # Since GitLab 18.2.2, the JWT subject for MRs are the target project path
+  # This can be overridden by the variables in the workflow rules
+  S3_PROJECT_PATH: ${CI_PROJECT_PATH}
   # per-pipeline artifact storage on MinIO
-  PIPELINE_ARTIFACTS_BASE: ${S3_HOST}/${S3_ARTIFACTS_BUCKET}/${CI_PROJECT_PATH}/${CI_PIPELINE_ID}
+  PIPELINE_ARTIFACTS_BASE: ${S3_HOST}/${S3_ARTIFACTS_BUCKET}/${S3_PROJECT_PATH}/${CI_PIPELINE_ID}
   # per-job artifact storage on MinIO
   JOB_ARTIFACTS_BASE: ${PIPELINE_ARTIFACTS_BASE}/${CI_JOB_ID}
   KERNEL_IMAGE_BASE: https://${S3_HOST}/${S3_KERNEL_BUCKET}/${KERNEL_REPO}/${KERNEL_TAG}
@@ -145,10 +148,14 @@ stages:
       when: never
     # merge pipeline
     - if: &is-merge-attempt $GITLAB_USER_LOGIN == "marge-bot" && $CI_PIPELINE_SOURCE == "merge_request_event"
+      variables:
+        S3_PROJECT_PATH: ${CI_MERGE_REQUEST_SOURCE_PROJECT_PATH}
     # post-merge pipeline
     - if: &is-post-merge $GITLAB_USER_LOGIN == "marge-bot" && $CI_PIPELINE_SOURCE == "push"
     # Pre-merge pipeline
     - if: &is-pre-merge $CI_PIPELINE_SOURCE == "merge_request_event"
+      variables:
+        S3_PROJECT_PATH: ${CI_MERGE_REQUEST_SOURCE_PROJECT_PATH}
     # Push to a branch on a fork
     - if: &is-fork-push $CI_PIPELINE_SOURCE == "push"
     # nightly pipeline
