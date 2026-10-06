@@ -255,12 +255,23 @@ static int msm_iommu_pagetable_map(struct msm_mmu *mmu, u64 iova,
 {
 	struct msm_iommu_pagetable *pagetable = to_pagetable(mmu);
 	struct io_pgtable_ops *ops = pagetable->pgtbl_ops;
+	int ret;
 
 	if (!sgt)
 		return msm_iommu_pagetable_map_prr(mmu, iova, len, prot);
 
-	return __do_map(pagetable->pgsize_bitmap, iova, sgt, off, len, prot,
-			ops, __map_pgtable, __unmap_pgtable);
+	ret = __do_map(pagetable->pgsize_bitmap, iova, sgt, off, len, prot,
+		       ops, __map_pgtable, __unmap_pgtable);
+
+	if (ret) {
+		/*
+		 * If the map failed mid-way, it will have triggered an
+		 * unmap, so we need to flush the TLB:
+		 */
+		iommu_flush_iotlb_all(to_msm_iommu(pagetable->parent)->domain);
+	}
+
+	return ret;
 }
 
 static void msm_iommu_pagetable_destroy(struct msm_mmu *mmu)
