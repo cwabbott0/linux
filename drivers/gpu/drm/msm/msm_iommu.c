@@ -766,11 +766,16 @@ static int msm_iommu_map(struct msm_mmu *mmu, uint64_t iova,
 static int msm_iommu_unmap(struct msm_mmu *mmu, uint64_t iova, size_t len)
 {
 	struct iommu_domain *domain = to_msm_iommu(mmu)->domain;
+	int ret;
 
 	if (iova & BIT_ULL(48))
 		iova |= GENMASK_ULL(63, 49);
 
-	return __do_unmap(domain->pgsize_bitmap, iova, len, domain, __unmap_iommu);
+	ret = __do_unmap(domain->pgsize_bitmap, iova, len, domain, __unmap_iommu);
+
+	iommu_flush_iotlb_all(domain);
+
+	return ret;
 }
 
 static void msm_iommu_destroy(struct msm_mmu *mmu)
