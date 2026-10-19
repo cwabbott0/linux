@@ -351,6 +351,8 @@ void a6xx_preempt_fini(struct msm_gpu *gpu)
 
 	msm_gem_kernel_put(a6xx_gpu->preempt_postamble_bo, gpu->vm);
 
+	msm_gem_kernel_put(a6xx_gpu->aqe_stcm_bo, gpu->vm);
+
 	for (i = 0; i < gpu->nr_rings; i++)
 		msm_gem_kernel_put(a6xx_gpu->preempt_bo[i], gpu->vm);
 }
@@ -383,6 +385,16 @@ void a6xx_preempt_init(struct msm_gpu *gpu)
 
 	if (IS_ERR(a6xx_gpu->preempt_postamble_ptr))
 		goto fail;
+
+	if (a6xx_gpu->base.info->fw[ADRENO_FW_AQE]) {
+		void *aqe_stcm_ptr = msm_gem_kernel_new(gpu->dev,
+			PAGE_SIZE,
+			MSM_BO_WC | MSM_BO_MAP_PRIV,
+			gpu->vm, &a6xx_gpu->aqe_stcm_bo,
+			&a6xx_gpu->aqe_stcm_iova);
+		if (IS_ERR(aqe_stcm_ptr))
+			goto fail;
+	}
 
 	preempt_prepare_postamble(a6xx_gpu);
 

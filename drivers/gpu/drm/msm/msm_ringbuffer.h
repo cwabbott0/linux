@@ -112,6 +112,11 @@ struct msm_ringbuffer {
 	 */
 	bool restore_wptr;
 
+	/*
+	 * Whether this is the first submit after powering on the GPU.
+	 */
+	bool first_submit;
+
 	/**
 	 * cur_ctx_seqno:
 	 *

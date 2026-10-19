@@ -486,6 +486,30 @@ static int a8xx_preempt_start(struct msm_gpu *gpu)
 
 	a6xx_emit_set_pseudo_reg(ring, a6xx_gpu, NULL);
 
+	/* This has to happen after SET_PSEUDO_REG, since that initializes the
+	 * AQE, but before we yield for preemption.
+	 */
+	if (a6xx_gpu->aqe_iova) {
+		/* Wait for AQE to write out configuration. */
+		OUT_PKT7(ring, CP_WAIT_REG_MEM, 6);
+		OUT_RING(ring, CP_WAIT_REG_MEM_0_FUNCTION(WRITE_EQ) |
+			       CP_WAIT_REG_MEM_0_POLL(POLL_REGISTER));
+		OUT_RING(ring, REG_A8XX_CP_STCM_REG(0x73));
+		OUT_RING(ring, 0);
+		OUT_RING(ring, 1); /* REF */
+		OUT_RING(ring, 1); /* MASK */
+		OUT_RING(ring, 0x10); /* DELAY_LOOP_CYCLES */
+
+		/* Save PM4 FIFO configuration setup by AQE. */
+		OUT_PKT7(ring, CP_REG_TO_MEM, 3);
+		OUT_RING(ring, CP_REG_TO_MEM_0_REG(REG_A8XX_CP_STCM_REG(0x65)));
+		OUT_RING(ring, lower_32_bits(a6xx_gpu->aqe_stcm_iova));
+		OUT_RING(ring, upper_32_bits(a6xx_gpu->aqe_stcm_iova));
+
+		/* Make sure it lands. */
+		OUT_PKT7(ring, CP_WAIT_MEM_WRITES, 0);
+	}
+
 	a6xx_flush_yield(gpu, ring);
 
 	return a8xx_idle(gpu, ring) ? 0 : -EINVAL;
@@ -1376,5 +1400,30 @@ void a8xx_perfcntr_flush(struct msm_gpu *gpu)
 	if (gpu_poll_timeout(gpu, REG_A8XX_RBBM_PERFCTR_FLUSH_HOST_STATUS, val,
 			     val & BIT(0), 100, 100 * 1000)) {
 		dev_err(&gpu->pdev->dev, "Perfcounter flush timed out: status=0x%08x\n", val);
+	}
+}
+
+void a8xx_emit_aqe(struct msm_ringbuffer *ring, struct a6xx_gpu *a6xx_gpu)
+{
+	/* Only do this before the first submit to the ring, since subsequently
+	 * the value will be correctly saved/restored by preemption routine or
+	 * cached.
+	 */
+	if (a6xx_gpu->aqe_iova && ring->first_submit) {
+		OUT_PKT7(ring, CP_THREAD_CONTROL, 1);
+		OUT_RING(ring, CP_SET_THREAD_BR);
+
+		/* Restore FIFO configuration. */
+		OUT_PKT7(ring, CP_MEM_TO_REG, 3);
+		OUT_RING(ring, CP_MEM_TO_REG_0_REG(REG_A8XX_CP_STCM_REG(0x65)));
+		OUT_RING(ring, lower_32_bits(a6xx_gpu->aqe_stcm_iova));
+		OUT_RING(ring, upper_32_bits(a6xx_gpu->aqe_stcm_iova));
+
+		/* Set ready bit to 1 so that SQE does not hang. */
+		OUT_PKT4(ring, REG_A8XX_CP_STCM_REG(0x73), 1);
+		OUT_RING(ring, 1);
+
+		/* Wait for reg writes to land. */
+		OUT_PKT7(ring, CP_WAIT_FOR_ME, 0);
 	}
 }

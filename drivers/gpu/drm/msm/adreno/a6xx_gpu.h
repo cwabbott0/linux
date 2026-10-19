@@ -108,6 +108,9 @@ struct a6xx_gpu {
 	uint64_t preempt_postamble_len;
 	bool postamble_enabled;
 
+	struct drm_gem_object *aqe_stcm_bo;
+	uint64_t aqe_stcm_iova;
+
 	struct a6xx_gmu gmu;
 
 	struct drm_gem_object *shadow_bo;
@@ -364,4 +367,6 @@ void a8xx_preempt_irq(struct msm_gpu *gpu);
 bool a8xx_progress(struct msm_gpu *gpu, struct msm_ringbuffer *ring);
 void a8xx_perfcntr_flush(struct msm_gpu *gpu);
 void a8xx_recover(struct msm_gpu *gpu);
+void a8xx_emit_aqe(struct msm_ringbuffer *ring, struct a6xx_gpu *gpu);
+
 #endif /* __A6XX_GPU_H__ */

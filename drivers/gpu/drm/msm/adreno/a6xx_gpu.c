@@ -508,6 +508,9 @@ static void a7xx_submit(struct msm_gpu *gpu, struct msm_gem_submit *submit)
 	if (gpu->nr_rings > 1)
 		a6xx_emit_set_pseudo_reg(ring, a6xx_gpu, submit->queue);
 
+	if (adreno_is_a8xx(adreno_gpu))
+		a8xx_emit_aqe(ring, a6xx_gpu);
+
 	if (adreno_is_a8xx(adreno_gpu)) {
 		rbbm_perfctr_cp0 = REG_A8XX_RBBM_PERFCTR_CP(0);
 		cp_always_on_context = REG_A8XX_CP_ALWAYS_ON_CONTEXT;
