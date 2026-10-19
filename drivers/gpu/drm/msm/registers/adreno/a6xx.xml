@@ -464,6 +464,8 @@ by a particular renderpass/blit.
 	<array offset="0x0a9c" name="CP_RESERVED_REG" stride="1" length="4" variants="A7XX"/>
 	<array offset="0x0958" name="CP_RESERVED_REG" stride="1" length="4" variants="A8XX-"/>
 
+	<array offset="0x0980" name="CP_STCM_REG" stride="1" length="128" variants="A8XX-"/>
+
 	<bitset name="a8xx_aperture_cntl" inline="yes">
 		<bitfield name="CONTEXTID3D" low="4" high="5"/>
 		<bitfield name="CLUSTERID" low="8" high="11"/>
