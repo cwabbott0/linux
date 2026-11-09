@@ -129,6 +129,8 @@ struct adreno_info {
 	 */
 	struct adreno_speedbin *speedbins;
 	u64 preempt_record_size;
+
+	const void *snapshot_block_list;
 };
 
 #define ADRENO_CHIP_IDS(tbl...) (uint32_t[]) { tbl, 0 }

@@ -10,6 +10,14 @@
 #include "a6xx_gpu.h"
 #include "a6xx.xml.h"
 
+#include "adreno_gen8_snapshot.h"
+#include "catalog/adreno_glymur.h"
+#include "catalog/adreno_hawi.h"
+#include "catalog/adreno_kaanapali.h"
+#include "catalog/adreno_maili.h"
+#include "catalog/adreno_milos.h"
+#include "catalog/adreno_pakala.h"
+
 static const struct adreno_reglist_pipe a830_nonctxt_regs[] = {
 	{ REG_A8XX_CP_SMMU_STREAM_ID_LPAC, 0x00000101, BIT(PIPE_NONE) },
 	{ REG_A8XX_GRAS_DBG_ECO_CNTL, 0x00000800, BIT(PIPE_BR) | BIT(PIPE_BV) },
@@ -1577,6 +1585,7 @@ static const struct adreno_info a8xx_gpus[] = {
 			{ 221, 3 },
 			{ 190, 4 },
 		),
+		.snapshot_block_list = &pakala_snapshot_block_list,
 	}, {
 		.chip_ids = ADRENO_CHIP_IDS(0x44070001),
 		.family = ADRENO_8XX_GEN2,
@@ -1620,6 +1629,7 @@ static const struct adreno_info a8xx_gpus[] = {
 			{ 357, 2 },
 			{ 284, 3 },
 		),
+		.snapshot_block_list = &glymur_snapshot_block_list,
 	}, {
 		.chip_ids = ADRENO_CHIP_IDS(0x44050a01),
 		.family = ADRENO_8XX_GEN2,
@@ -1665,6 +1675,7 @@ static const struct adreno_info a8xx_gpus[] = {
 			{ 252, 2 },
 			{ 221, 3 },
 		),
+		.snapshot_block_list = &kaanapali_snapshot_block_list,
 	}, {
 		.chip_ids = ADRENO_CHIP_IDS(0x44010000),
 		.family = ADRENO_8XX_GEN1,
@@ -1707,6 +1718,7 @@ static const struct adreno_info a8xx_gpus[] = {
 			{ 242, 1 },
 			{ 221, 2 },
 		),
+		.snapshot_block_list = &milos_snapshot_block_list,
 	}, {
 		.chip_ids = ADRENO_CHIP_IDS(0x44060000),
 		.family = ADRENO_8XX_GEN2,
@@ -1749,6 +1761,7 @@ static const struct adreno_info a8xx_gpus[] = {
 			{ 357, 2 },
 			{ 284, 3 },
 		),
+		.snapshot_block_list = &glymur_snapshot_block_list,
 	}, {
 		.chip_ids = ADRENO_CHIP_IDS(0x44041400),
 		.family = ADRENO_8XX_GEN2,
@@ -1792,6 +1805,7 @@ static const struct adreno_info a8xx_gpus[] = {
 			{ 0xd8, 0 },
 			{ 0x11c, 1 },
 		),
+		.snapshot_block_list = &maili_snapshot_block_list,
 	}, {
 		.chip_ids = ADRENO_CHIP_IDS(0x44051401),
 		.family = ADRENO_8XX_GEN2,
@@ -1835,6 +1849,7 @@ static const struct adreno_info a8xx_gpus[] = {
 			{ 284, 2 },
 			{ 216, 3 },
 		),
+		.snapshot_block_list = &hawi_snapshot_block_list,
 	}
 };
 
