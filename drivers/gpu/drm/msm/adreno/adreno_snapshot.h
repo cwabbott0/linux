@@ -5,7 +5,10 @@
 
 #pragma once
 
+#include <linux/bitfield.h>
 #include <linux/types.h>
+
+#include "msm_gpu.h"
 
 /* Snapshot header */
 
@@ -150,6 +153,7 @@ struct adreno_snapshot_gmu_mem {
 	uint64_t gmuaddr;
 	uint64_t gpuaddr;
 } __packed;
+#define STRUCT_GMU_MEMORY adreno_snapshot_gmu_mem
 
 /* Register sub-section header */
 struct adreno_snapshot_regs {
@@ -172,6 +176,7 @@ struct adreno_snapshot_indexed_regs_v2 {
 	u32 pipe_id;	/* Id of pipe, BV, Br etc */
 	u32 slice_id;	/* Slice ID to be dumped */
 } __packed;
+#define STRUCT_INDEXED_REGS_V2 adreno_snapshot_indexed_regs_v2
 
 /* MVC register sub-section header */
 struct adreno_snapshot_mvc_regs {
@@ -195,6 +200,7 @@ struct adreno_snapshot_mvc_regs_v3 {
 	u32 sp_id;
 	u32 usptp_id;
 } __packed;
+#define STRUCT_MVC_V3 adreno_snapshot_mvc_regs_v3
 
 /* Debug data sub-section header */
 
@@ -222,17 +228,20 @@ struct adreno_snapshot_debug {
 	int type;    /* Type identifier for the attached tata */
 	int size;   /* Size of the section in dwords */
 } __packed;
+#define STRUCT_DEBUG adreno_snapshot_debug
 
 struct adreno_snapshot_debugbus {
 	int id;	   /* Debug bus ID */
 	int count; /* Number of dwords in the dump */
 } __packed;
+#define STRUCT_DEBUGBUS adreno_snapshot_debugbus
 
 struct adreno_snapshot_side_debugbus {
 	int id;   /* Debug bus ID */
 	int size; /* Number of dwords in the dump */
 	int valid_data;  /* Mask of valid bits of the side debugbus */
 } __packed;
+#define STRUCT_SIDE_DEBUGBUS adreno_snapshot_side_debugbus
 
 struct adreno_snapshot_shader {
 	int type;  /* SP/TP statetype */
@@ -259,6 +268,7 @@ struct adreno_snapshot_shader_v3 {
 	u32 ctxt_id; /* Context ID */
 	u32 size;  /* Number of dwords in the dump */
 } __packed;
+#define STRUCT_SHADER_V3 adreno_snapshot_shader_v3
 
 #define TRACE_BUF_NUM_SIG 4
 
@@ -302,6 +312,7 @@ struct adreno_snapshot_gpu_object_v2 {
 	__u64 ptbase;  /* Base for the pagetable the GPU address is valid in */
 	__u64 size;    /* Size of the object (in dwords) */
 } __packed;
+#define STRUCT_GPU_OBJECT_V2 adreno_snapshot_gpu_object_v2
 
 struct adreno_snapshot_eventlog {
 	/** @type: Type of the event log buffer */
@@ -319,3 +330,202 @@ struct adreno_snapshot_gmu_version {
 	u32 value;
 } __packed;
 
+struct adreno_snapshot_empty_header { u8 dummy; };
+#define STRUCT_REGS_V2 adreno_snapshot_debugbus
+
+#define REG_COUNT(_ptr) ((_ptr[1] - _ptr[0]) + 1)
+
+static int adreno_snapshot_regs_count(const u32 *ptr)
+{
+	unsigned int count = 0;
+	unsigned int group_count;
+
+	for ( ; ptr[0] != UINT_MAX; ptr += 2) {
+		group_count = REG_COUNT(ptr);
+		if (group_count == 1)
+			count += group_count + 1;
+		else
+			count += group_count + 2;
+	}
+	return count;
+}
+
+struct adreno_gpu_state {
+	struct msm_gpu_state base;
+
+	s32 hfi_queue_history[HFI_MAX_QUEUES][HFI_HISTORY_SZ];
+
+	/* list of struct adreno_state_memobj */
+	struct list_head objs;
+
+	bool gpu_initialized;
+};
+
+struct adreno_state_memobj {
+	struct list_head node;
+	void *ptr;	/* replaced by ascii85 encoded string in adreno_show_object() */
+	bool encoded;
+	size_t size;
+};
+
+/**
+ * A on-stack helper to build snapshot sections setting the size field when the
+ * helper goes out of scope, to simplify constructing snapshot sections, but
+ * without resorting to the callback approach that kgsl uses.
+ */
+struct adreno_snapshot_sect {
+	struct adreno_state_memobj *obj;
+	void *cur, *end;
+};
+
+static void __snapshot_sect_fini(struct adreno_snapshot_sect *s)
+{
+	if (!s->obj)
+		return;
+	struct adreno_snapshot_section_header *hdr = (void *)s->obj->ptr;
+	hdr->size = s->obj->size = ((u8 *)s->cur - (u8 *)s->obj->ptr);
+}
+
+DEFINE_FREE(sect_fini, struct adreno_snapshot_sect, __snapshot_sect_fini(&_T));
+
+static struct adreno_snapshot_sect
+__snapshot_sect_init(struct adreno_gpu_state *state, uint16_t id, size_t extra_sz,
+		     void *sect_hdr, size_t sect_hdr_sz, const char *func, int line)
+{
+	/* A few section types have no section header: */
+	switch (id) {
+	case ADRENO_SNAPSHOT_SECTION_REGS_V2:
+		sect_hdr_sz = 0;
+		break;
+	default:
+		break;
+	}
+
+	pr_debug("%s:%d: snapshot_sect(id=%04x, extra_sz=%zu, sect_hdr_sz=%zu)\n",
+		 func, line, id, extra_sz, sect_hdr_sz);
+
+	size_t sz = sizeof(struct adreno_snapshot_section_header) + sect_hdr_sz + extra_sz;
+	struct adreno_state_memobj *obj = kzalloc_obj(*obj);
+	void *ptr = kvzalloc(sz, GFP_KERNEL);
+
+	if (!obj || !ptr) {
+		kfree(obj);
+		kvfree(ptr);
+		return (struct adreno_snapshot_sect){};
+	}
+
+	obj->ptr = ptr;
+
+	list_add_tail(&obj->node, &state->objs);
+
+	/* Common snapshot section header: */
+	struct adreno_snapshot_section_header *hdr = ptr;
+	hdr->magic = SNAPSHOT_SECTION_MAGIC;
+	hdr->id = id;
+	/* size filled out in __snapshot_sect_fini() */
+	ptr += sizeof(*hdr);
+
+	/* Section type header: */
+	memcpy(ptr, sect_hdr, sect_hdr_sz);
+	ptr += sect_hdr_sz;
+
+	return (struct adreno_snapshot_sect) {
+		.obj = obj,
+		.cur = ptr,
+		.end = ptr + extra_sz,
+	};
+}
+
+static void
+snapshot_sect_data(struct adreno_snapshot_sect *s, const void *data, size_t sz)
+{
+	/* overflow check: */
+	if (WARN_ON_ONCE(s->cur + sz > s->end))
+		return;
+
+	memcpy(s->cur, data, sz);
+	s->cur += sz;
+}
+
+#define snapshot_sect_arr(_s, _d) snapshot_sect_data(_s, _d, sizeof(_d))
+
+static void
+snapshot_sect_u32(struct adreno_snapshot_sect *s, u32 val)
+{
+	snapshot_sect_data(s, &val, sizeof(val));
+}
+
+#define __snapshot_sect(_label, _state, _id, _extra_sz, ...)		\
+	for (struct adreno_snapshot_sect sect __free(sect_fini) = ({	\
+		struct STRUCT_ ## _id sect_hdr = __VA_ARGS__;		\
+		__snapshot_sect_init(_state, ADRENO_SNAPSHOT_SECTION_ ## _id,	\
+				     _extra_sz, &sect_hdr, 		\
+				     sizeof(sect_hdr), 			\
+				     __func__, __LINE__); });		\
+	     sect.obj; ({ goto _label; }))				\
+		if (false) {						\
+_label:									\
+			break;						\
+		} else
+
+#define snapshot_sect(_id, _extra_sz, ...) \
+	__snapshot_sect(__UNIQUE_ID(label), _id, _extra_sz, __VA_ARGS__)
+
+struct adreno_crashdumper {
+	void *ptr;
+	size_t data_offset;
+	struct drm_gem_object *bo;
+	u64 iova;
+};
+
+/**
+ * On-stack object to represent a single crashdumper invocation, tracking
+ * in/out ptrs and checking for overflow.
+ */
+struct cd_script {
+	struct adreno_crashdumper *dumper;
+	u64 *in;
+	u64 out;
+};
+
+/* These should be implemented by the gen specific backend: */
+static inline int __cd_run(struct msm_gpu *gpu, struct adreno_crashdumper *dumper);
+static inline bool __cd_check_overflow(struct cd_script *p);
+
+static inline struct cd_script CD_INIT(struct adreno_crashdumper *dumper)
+{
+	return (struct cd_script) {
+		.dumper = dumper,
+		.in = dumper->ptr,
+		.out = dumper->iova + dumper->data_offset,
+	};
+}
+
+static inline void CD_WRITE(struct cd_script *p, u32 reg, u32 val)
+{
+	*(p->in++) = val;
+	*(p->in++) = FIELD_PREP(GENMASK_U64(63, 44), reg) | BIT(21) | BIT(0);
+	__cd_check_overflow(p);
+}
+
+static inline void CD_READ(struct cd_script *p, u32 reg, u32 dwords)
+{
+	*(p->in++) = p->out;
+	*(p->in++) = FIELD_PREP(GENMASK_U64(63, 44), reg) | dwords;
+	p->out += sizeof(u32) * dwords;
+	__cd_check_overflow(p);
+}
+
+static void CD_FINISH(struct cd_script *p)
+{
+	*(p->in++) = 0;
+	*(p->in++) = 0;
+	__cd_check_overflow(p);
+}
+
+static int CD_RUN(struct cd_script *p, struct msm_gpu *gpu)
+{
+	if (!__cd_check_overflow(p))
+		return -ENOSPC;
+	return __cd_run(gpu, p->dumper);
+}

@@ -369,4 +369,9 @@ void a8xx_preempt_irq(struct msm_gpu *gpu);
 bool a8xx_progress(struct msm_gpu *gpu, struct msm_ringbuffer *ring);
 void a8xx_perfcntr_flush(struct msm_gpu *gpu);
 void a8xx_recover(struct msm_gpu *gpu);
+void a8xx_show(struct msm_gpu *gpu, struct msm_gpu_state *state,
+		struct drm_printer *p);
+struct msm_gpu_state *a8xx_gpu_state_get(struct msm_gpu *gpu);
+int a8xx_gpu_state_put(struct msm_gpu_state *state);
+
 #endif /* __A6XX_GPU_H__ */
