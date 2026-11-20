@@ -88,6 +88,7 @@ static void a5xx_preempt_timer(struct timer_list *t)
 		return;
 
 	DRM_DEV_ERROR(dev->dev, "%s: preemption timed out\n", gpu->name);
+	gpu->preemption_timeout = true;
 	kthread_queue_work(gpu->worker, &gpu->recover_work);
 }
 
@@ -196,6 +197,7 @@ void a5xx_preempt_irq(struct msm_gpu *gpu)
 		set_preempt_state(a5xx_gpu, PREEMPT_FAULTED);
 		DRM_DEV_ERROR(dev->dev, "%s: Preemption failed to complete\n",
 			gpu->name);
+		gpu->preemption_timeout = true;
 		kthread_queue_work(gpu->worker, &gpu->recover_work);
 		return;
 	}
@@ -241,6 +243,7 @@ void a5xx_preempt_hw_init(struct msm_gpu *gpu)
 
 	/* Reset the preemption state */
 	set_preempt_state(a5xx_gpu, PREEMPT_NONE);
+	gpu->preemption_timeout = false;
 }
 
 static int preempt_init_ring(struct a5xx_gpu *a5xx_gpu,

@@ -471,6 +471,7 @@ static void recover_worker(struct kthread_work *work)
 	char *comm = NULL, *cmd = NULL;
 	unsigned int noreclaim_flag;
 	struct task_struct *task;
+	bool hung_submit = true;
 	int i;
 
 	mutex_lock(&gpu->lock);
@@ -482,14 +483,33 @@ static void recover_worker(struct kthread_work *work)
 	/*
 	 * If the submit retired while we were waiting for the worker to run,
 	 * or waiting to acquire the gpu lock, then nothing more to do.
+	 * However this is not the case if preemption timed out, because
+	 * the old ring may have finished but the preemption didn't finish.
 	 */
-	if (!submit)
-		goto out_unlock;
+	if (!submit) {
+		if (gpu->preemption_timeout) {
+			/* Blame the preemption timeout on the last completed
+			 * submit if there is one, although at this point
+			 * finding the culprit is pure guesswork.
+			 */
+			submit = find_submit(cur_ring, cur_ring->memptrs->fence);
 
-	/* Increment the fault counts */
-	submit->queue->faults++;
+			/* Don't try to advance the fence below as no submit is
+			 * actually stuck.
+			 */
+			hung_submit = false;
+		} else {
+			goto out_unlock;
+		}
+	}
 
-	task = get_pid_task(submit->pid, PIDTYPE_PID);
+	if (submit) {
+		/* Increment the fault counts */
+		submit->queue->faults++;
+
+		task = get_pid_task(submit->pid, PIDTYPE_PID);
+	}
+
 	if (!task)
 		gpu->global_faults++;
 	else {
@@ -511,7 +531,8 @@ static void recover_worker(struct kthread_work *work)
 
 	noreclaim_flag = memalloc_noreclaim_save();
 
-	get_comm_cmdline(submit, &comm, &cmd);
+	if (submit)
+		get_comm_cmdline(submit, &comm, &cmd);
 
 	if (comm && cmd) {
 		DRM_DEV_ERROR(dev->dev, "%s: offending task: %s (%s)\n",
@@ -546,9 +567,9 @@ static void recover_worker(struct kthread_work *work)
 
 		/*
 		 * For the current (faulting?) ring/submit advance the fence by
-		 * one more to clear the faulting submit
+		 * one more to clear the faulting submit if there is one.
 		 */
-		if (ring == cur_ring)
+		if (ring == cur_ring && hung_submit)
 			ring->memptrs->fence = ++fence;
 
 		msm_update_fence(ring->fctx, fence);

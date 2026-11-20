@@ -241,6 +241,9 @@ struct msm_gpu {
 	/* work for handling GPU recovery: */
 	struct kthread_work recover_work;
 
+	/* Is the GPU recovery due to preemption timing out? */
+	bool preemption_timeout;
+
 	/** retire_event: notified when submits are retired: */
 	wait_queue_head_t retire_event;
 
